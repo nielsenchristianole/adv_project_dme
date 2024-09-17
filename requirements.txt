@@ -6,3 +6,4 @@ geopandas
 netCDF4
 tyro
 requests
+basemap
