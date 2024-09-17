@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dnd_map_sampler"
+version = "0.0.1"
+authors = [
+  { name="Danina Le", email="sxxxxxx@dtu.dk" },
+  { name="Christian Ole Nielsen", email="s204131@dtu.dk"},
+  { name="Calle Ryge", email="s204114@dtu.dk"}
+]
+description = "Advanced project in digital media engineering"
+readme = "README.md"
+requires-python = ">=3.11"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+Homepage = "https://github.com/nielsenchristianole/adv_project_dme"
+Issues = "https://github.com/nielsenchristianole/adv_project_dme/issues"
+
+[tool.setuptools]
+packages = ["src"]
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
+
+[tool.ruff]
+line-length = 120
