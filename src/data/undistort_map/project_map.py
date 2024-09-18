@@ -1,9 +1,9 @@
-import tyro
 import os
+import json
+import tyro
+from tqdm import tqdm
 from pathlib import Path
 import numpy as np
-import json
-from tqdm import tqdm
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 
@@ -13,17 +13,17 @@ class MapProjector:
     """
     def __init__(
         self,
-        inp_npy: os.PathLike,
         output_dir: os.PathLike, 
         visualize: bool = False, 
         radius: float = 1, # Earth's radius is 6378137 meters if we want the sphere to be the correct size
-        planes_file: os.PathLike | str  =None,
+        planes_file: os.PathLike | str  = None,
+        inp_npy_file: os.PathLike = None
         ):
         """
         Initialize the MapProjector class.
+        inp_npy_file and planes_file are optional arguments, the MapProjector can also be run with planes and lat_lon_arr as np.array arguments.
         
         Args:
-            inp_npy (os.PathLike): Path to the .npy file containing (lat, lon) in the first two columns.
             output_dir (os.PathLike): Path to the output directory to save the results.
             visualize (bool): Whether to visualize the sphere to plane projection.
             radius (float): Radius of the sphere to project the points onto.
@@ -31,12 +31,13 @@ class MapProjector:
                 1. Path to a .npy file with rows of (center_xyz, width, height) for each plane. The chosen w and h should be chosen as same scale as the radius.
                 2. 'test' to use a test plane at (0,0) that projects the entire hemisphere.
                 3. None will generate random planes from 0.2 to 1 scale of the radius size.
+            inp_npy_file (os.PathLike, optional): Path to the .npy file containing (lat, lon) in the first two columns.
         """
         self.output_dir = Path(output_dir)
         self.visualize = visualize
         self.radius = radius 
         self.planes_file = planes_file
-        self.inp_npy = inp_npy
+        self.inp_npy = inp_npy_file
 
     def project_lat_lon_to_sphere(self, lat_lon_arr: np.ndarray) -> np.ndarray:
         """
@@ -175,8 +176,10 @@ class MapProjector:
 
         # Loop through each plane
         for i, plane in enumerate(tqdm(planes, desc="Processing planes")):
-            center_xyz, width, height = plane[:3], plane[3], plane[4]
-
+            center_latlon, width, height = plane[:2], plane[2], plane[3]
+        
+            center_xyz = np.squeeze(self.project_lat_lon_to_sphere(np.array([center_latlon])))
+            
             # Project and filter the points for this plane
             projected_points = self.project_and_filter(points, center_xyz, width, height)
 
@@ -273,46 +276,42 @@ class MapProjector:
             num_planes (int): Number of random planes to generate.
 
         Returns:
-            np.ndarray: Array of shape (num_planes, 5) where each row is (center_xyz, width, height).
+            np.ndarray: Array of shape (num_planes, 5) where each row is (center_latlon, width, height).
         """
 
-        # Generate random points on a unit sphere
-        phi = np.random.uniform(0, 2 * np.pi, num_planes)
-        cos_theta = np.random.uniform(-1, 1, num_planes)
-        sin_theta = np.sqrt(1 - cos_theta**2)
-
-        x = sin_theta * np.cos(phi)
-        y = sin_theta * np.sin(phi)
-        z = cos_theta
-
-        xyz_coords = np.column_stack((x, y, z))
+        # Generate latitudes and longitudes between -90 and 90 and -180 and 180 respectively
+        latitudes = np.random.uniform(-90, 90, num_planes)
+        longitudes = np.random.uniform(-180, 180, num_planes)
 
         # Generate random width and height between 0 and 1
-        width = np.random.uniform(0.2, 1, num_planes)
-        height = np.random.uniform(0.2, 1, num_planes)
-
-        plane_samples = np.column_stack((xyz_coords, width, height))
-        plane_samples *= self.radius  # Scale the coordinates to the sphere's radius
+        width = self.radius * np.random.uniform(0.2, 1, num_planes)
+        height = self.radius * np.random.uniform(0.2, 1, num_planes)
+        
+        plane_samples = np.column_stack((latitudes, longitudes, width, height))
         
         return plane_samples
 
-    def run(self):
+    def run(self, lat_lon_arr: np.ndarray = None, planes: np.ndarray = None):
         """
         Run the map projection pipeline.
+        
+        Args:
+            lat_lon_arr (np.ndarray, optional): Array of latitude and longitude coordinates (n x 2 array).
+            planes (np.ndarray, optional): Array of planes with center_latlon, width, and height (n x 4 array).
         """
-        lat_lon_arr = np.load(self.inp_npy)
+        if lat_lon_arr is None:
+            lat_lon_arr = np.load(self.inp_npy)
         sphere_coords = self.project_lat_lon_to_sphere(lat_lon_arr)
 
-        if self.planes_file is None:
+        if self.planes_file is None and planes is None:
             print('Generating random planes')
             planes = self.generate_plane_samples(5)
         elif str(self.planes_file) == 'test':
             print('Using a test plane at (0,0)')
-            xyz = self.project_lat_lon_to_sphere(np.array([[0, 0]]))
-            planes = np.hstack((xyz, [[self.radius * 2, self.radius * 2]]))
-        else:
+            planes = np.array([[0, 0, self.radius * 2, self.radius * 2]])
+        elif planes is None:
             planes = np.load(self.planes_file)
-
+            
         metadata = self.process_planes(planes, sphere_coords)
 
         if self.visualize:
@@ -321,6 +320,4 @@ class MapProjector:
 
 
 if __name__ == '__main__':
-    args = tyro.cli(MapProjector)
-    script = MapProjector(**vars(args))
-    script.run()
+    tyro.cli(MapProjector).run()
