@@ -201,7 +201,7 @@ class MapProjector:
             json.dump(metadata, json_file, indent=4)
 
         print(f'Processed {len(planes)} planes. Results saved to {self.output_dir}.')
-        return metadata
+        return metadata, projected_points
 
     def visualize_sphere_to_plane_projection(self, sphere_coords: np.ndarray, processed_plane: dict):
         """
@@ -312,11 +312,13 @@ class MapProjector:
         elif planes is None:
             planes = np.load(self.planes_file)
             
-        metadata = self.process_planes(planes, sphere_coords)
+        metadata, last_projected_points = self.process_planes(planes, sphere_coords)
 
         if self.visualize:
             for i, plane_meta in enumerate(metadata):
                 self.visualize_sphere_to_plane_projection(sphere_coords, plane_meta)
+                
+        return last_projected_points
 
 
 if __name__ == '__main__':
