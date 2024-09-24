@@ -6,3 +6,5 @@ geopandas
 netCDF4
 tyro
 requests
+gradio
+scikit-image
