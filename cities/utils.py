@@ -11,5 +11,5 @@ def get_cities_in_range(data, lat_min, lat_max, lon_min, lon_max, city_types = C
                     (data["lon"] >= lon_min) & (data["lon"] <= lon_max) & 
                     (data["type"].isin(city_types))]
         
-def get_cities_by_country(data, country):
-    return data[data["country"] == country]
+def get_cities_by_country(data, country, city_types = CITY_TYPES):
+    return data[(data["country"] == country) & (data["type"].isin(city_types))]

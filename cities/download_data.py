@@ -69,5 +69,5 @@ def convert_to_pandas():
     print("(2/2) Saving to .csv")
     df.to_csv("data/cities.csv", index=False)
 
-# get_and_download_data()
+get_and_download_data()
 convert_to_pandas()
