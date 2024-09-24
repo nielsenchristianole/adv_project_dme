@@ -1,0 +1,106 @@
+{
+  "hamlet": {
+    "coastal": [
+      "Seaspray Hamlet",
+      "Coral Cove",
+      "Shellside",
+      "Gull's Nest",
+      "Waverunner",
+      "Tidepool Hamlet",
+      "Saltmarsh",
+      "Driftwood",
+      "Foamshore",
+      "Pebble Beach"
+    ],
+    "landlocked": [
+      "Meadow's End",
+      "Cloverfield",
+      "Woodside",
+      "Brook Hollow",
+      "Hilltop",
+      "Fernwood",
+      "Brambly",
+      "Riverbend",
+      "Thistle Hollow",
+      "Mossy Glen"
+    ]
+  },
+  "village": {
+    "coastal": [
+      "Harborview",
+      "Seabreeze Village",
+      "Whaleport",
+      "Lighthouse Point",
+      "Oceanview",
+      "Anchor's Rest",
+      "Fisher's Wharf",
+      "Nautilus Village",
+      "Stormy Bay",
+      "Seagrove"
+    ],
+    "landlocked": [
+      "Greenhill",
+      "Sunvale",
+      "Stonebridge",
+      "Willowbrook",
+      "Oakhaven",
+      "Elmwood",
+      "Redfield",
+      "Goldenridge",
+      "Birchwood",
+      "Silvermeadow"
+    ]
+  },
+  "town": {
+    "coastal": [
+      "Portside",
+      "Tidehaven",
+      "Seafarer's Rest",
+      "Mariner's Bay",
+      "Seawatch",
+      "Wavecrest",
+      "Harbor's Edge",
+      "Ocean's Reach",
+      "Baywatch",
+      "Coastal Reach"
+    ],
+    "landlocked": [
+      "Hillcrest",
+      "Fairhaven",
+      "Stonewall",
+      "Eastgate",
+      "Riverside",
+      "Valewood",
+      "Mountainview",
+      "Springfield",
+      "Lakewood",
+      "Highgrove"
+    ]
+  },
+  "city": {
+    "coastal": [
+      "Atlantis",
+      "Seaport City",
+      "Coral Harbor",
+      "Marina City",
+      "Neptune's Gate",
+      "Poseidon's Reach",
+      "Pearl Bay",
+      "Azure City",
+      "Saltwater City",
+      "Wavefront"
+    ],
+    "landlocked": [
+      "Kingsland",
+      "Ironhold",
+      "Northgate",
+      "Greenfield",
+      "Stonehaven",
+      "Brighton",
+      "Stormhold",
+      "Winterfell",
+      "Highland",
+      "Goldcrest"
+    ]
+  }
+}
