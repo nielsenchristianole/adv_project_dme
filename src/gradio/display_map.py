@@ -60,7 +60,9 @@ def plot_map(
         if height_map is not None:
             resolution = max(height_map.shape[:2])
         elif shape is not None:
-            resolution = shape.bounds[2:] if isinstance(shape, shapely.MultiPolygon) else np.ceil(np.array([np.max(s, axis=0).squeeze(0) for s in shape]).max()).astype(int).item()
+            resolution = shape.bounds[2:] if isinstance(shape, shapely.MultiPolygon) else np.ceil(np.array([np.max(s, axis=0).squeeze(0) for s in shape]).max(axis=0)).astype(int)[::-1]
+            map_so_far = np.full((*resolution, 3), 255, dtype=np.uint8)
+            resolution = max(resolution).item()
         else:
             resolution = 2000
 
@@ -76,7 +78,6 @@ def plot_map(
 
 
     # only generate the height map if given by return step
-    map_so_far = np.full((resolution, resolution, 3), 255, dtype=np.uint8)
     if return_step >= RETURN_STEP_OPTIONS.height_map:
 
         if max_height is None:
