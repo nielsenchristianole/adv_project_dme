@@ -134,7 +134,7 @@ def plot_map(
     # draw the shape on the map
     map_so_far = cv2.drawContours(map_so_far, shape_line, -1, shape_color, shape_pixel_width)
 
-    # generate some random towns if none is given
+
     if return_step >= RETURN_STEP_OPTIONS.towns:
 
         # draw the towns on the map

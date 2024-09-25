@@ -1,32 +1,12 @@
-import copy
-import json
 from typing import Literal
 
-import cv2
 import numpy as np
-import shapely
 import gradio as gr
+import shapely
 from src.gradio.demo_types import TOWN_TYPE, TOWN_TYPES, Town, RoadGraph
-from src.gradio.gradio_utils import TownNameSampler
 from src.gradio.display_map import plot_map
-
-
-
-
-
-
-
-
-
-# components
-
-
-# generation configs
-
-# town generation
-town_config_custom_town_type_radio = gr.Radio([(c.capitalize(), c) for c in TOWN_TYPES], value=TOWN_TYPES[0], label='Town Type', interactive=True, render=False)
-town_config_custom_town_feature_checkboxgroup = gr.CheckboxGroup([('Coastal', 'is_coastal')], label='Town Features', render=False)
-town_config_random_num_town_slider = gr.Slider(value=5, label='Number of Towns', minimum=1, maximum=30, step=1, interactive=True, render=False)
+from src.gradio.gradio_utils import TownNameSampler
+from src.gradio.gradio_configs import CLOSE_ICON
 
 
 with gr.Blocks() as demo:
@@ -37,8 +17,8 @@ with gr.Blocks() as demo:
     town_generation_method = gr.State('Random')
 
     # current states
-    shape_state = gr.State(shapely.MultiPolygon)
-    height_map_state = gr.State(lambda: np.ndarray((0, 0), dtype=np.float32))
+    shape_state = gr.State(None)
+    height_map_state = gr.State(None)
     towns_state = gr.State(list)
     roads_state = gr.State(RoadGraph.empty)
 
@@ -67,12 +47,12 @@ with gr.Blocks() as demo:
                     with gr.Accordion('Town config', open=False):
                         reset_town_button = gr.Button('Reset Towns')
                         with gr.Tab('Random') as town_config_random_tab:
-                            town_config_random_num_town_slider.render()
+                            town_config_random_num_town_slider = gr.Slider(value=5, label='Number of Towns', minimum=1, maximum=30, step=1, interactive=True)
                             @town_config_random_tab.select(outputs=[town_generation_method])
                             def _(): return 'Random'
                         with gr.Tab('Custom') as town_config_custom_tab:
-                            town_config_custom_town_type_radio.render()
-                            town_config_custom_town_feature_checkboxgroup.render()
+                            town_config_custom_town_type_radio = gr.Radio([(c.capitalize(), c) for c in TOWN_TYPES], value=TOWN_TYPES[0], label='Town Type', interactive=True)
+                            town_config_custom_town_feature_checkboxgroup = gr.CheckboxGroup([('Coastal', 'is_coastal')], label='Town Features')
                             @town_config_custom_tab.select(outputs=[town_generation_method])
                             def _(): return 'Custom'
 
@@ -83,17 +63,19 @@ with gr.Blocks() as demo:
                         reset_roads_button = gr.Button('Reset Roads')
                         
                         # which towns to connect
-                        with gr.Column():
+                        with gr.Accordion('Towns to connect'):
                             @gr.render(inputs=[towns_state], triggers=[towns_state.change])
                             def _(towns):
                                 if not towns:
                                     gr.Markdown('No towns to connect')
-                                    return
                                 for town in towns:
                                     # TODO: add checkbox to select town and figure out how dynamic inputs work
                                     # https://www.gradio.app/guides/dynamic-apps-with-render-decorator
                                     # https://www.gradio.app/docs/gradio/checkbox
-                                    gr.Checkbox(label=town['town_name'], value=False, interactive=True)
+                                    with gr.Row():
+                                        gr.Checkbox(value=False, label='', interactive=True, show_label=False, container=False, scale=1, min_width=10)
+                                        text_box = gr.Textbox(value=town['town_name'], lines=1, max_lines=1, interactive=True, show_label=False, container=False, scale=5)
+                                        gr.ClearButton(text_box, value=None, size='sm', icon=CLOSE_ICON, scale=1, min_width=10)
 
                         road_config_road_cost = gr.Slider(value=0.5, label='Road Cost', minimum=0.1, maximum=1, step=0.1, interactive=True)
                         road_config_slope_cost = gr.Slider(value=0.5, label='Slope Cost Factor', minimum=0.1, maximum=1, step=0.1, interactive=True)
@@ -108,9 +90,8 @@ with gr.Blocks() as demo:
                 image_mode='RGB',
                 show_download_button=False)
             with gr.Row():
-                gr.Button('Download PNG')
-                gr.Button('Download SVG')
-                gr.Button('Download JSON')
+                gr.DownloadButton('Download PNG')
+                gr.DownloadButton('Download JSON')
 
 
     # generation functions
@@ -143,10 +124,16 @@ with gr.Blocks() as demo:
     def generate_height_map(
         shape: shapely.MultiPolygon,
         roughness: float,
-        max_height: float
+        max_height: float,
+        *,
+        only_generate: bool = False
     ) -> dict:
 
         height_map = np.load('assets/defaults/height_map.npy')
+
+        if only_generate:
+            return height_map
+
         chart = plot_map(shape, height_map, towns=None, roads=None, return_step='height_map')
 
         return height_map, chart
@@ -168,8 +155,8 @@ with gr.Blocks() as demo:
             town_name_sampler,
             output_image])
     def generate_town(
-        shape: shapely.MultiPolygon,
-        height_map: np.ndarray,
+        shape: shapely.MultiPolygon|None,
+        height_map: np.ndarray|None,
         towns: list[dict],
         roads: RoadGraph,
         name_sampler: TownNameSampler,
@@ -178,10 +165,11 @@ with gr.Blocks() as demo:
         town_type: TOWN_TYPE,
         town_config: list[str]
     ) -> dict:
-
-
         possible_choices = np.where(height_map > 0)
         num_possible = len(possible_choices[0])
+
+        if height_map is None:
+            height_map = generate_height_map
 
         if generation_method == 'Random':
             for _ in range(num_towns):
@@ -219,15 +207,49 @@ with gr.Blocks() as demo:
 
         return towns, name_sampler, chart
 
-    # reset town names
-    @reset_town_button.click(outputs=[town_name_sampler, towns_state, roads_state])
-    def reset_town_names():
-        return TownNameSampler(), list(), RoadGraph.empty()
+    # road generation
+    @run_generate_road_button.click(
+        inputs=[
+            shape_state,
+            height_map_state,
+            towns_state,
+            roads_state,
+            road_config_road_cost,
+            road_config_slope_cost,
+            road_config_curvature_cost],
+        outputs=[
+            roads_state,
+            output_image])
+    def generate_road(*args):
+        return roads_state, plot_map(shape_state, height_map_state, towns_state, roads_state, return_step='roads')
+
+    # reset towns
+    @reset_town_button.click(
+        inputs=[
+            shape_state,
+            height_map_state],
+        outputs=[
+            town_name_sampler,
+            towns_state,
+            roads_state,
+            output_image])
+    def reset_town(shape, height_map):
+        chart = plot_map(shape, height_map, None, None, return_step='height_map')
+        return TownNameSampler(), list(), RoadGraph.empty(), chart
 
     # reset roads
-    @reset_roads_button.click(outputs=[roads_state])
-    def reset_roads():
-        return RoadGraph.empty()
+    @reset_roads_button.click(
+        inputs=[
+            shape_state,
+            height_map_state,
+            towns_state],
+        outputs=[
+            roads_state,
+            output_image])
+    def reset_roads(shape, height_map, towns):
+        chart = plot_map(shape, height_map, towns, None, return_step='towns')
+        return RoadGraph.empty(), chart
+
 
 if __name__ == '__main__':
     demo.launch()
