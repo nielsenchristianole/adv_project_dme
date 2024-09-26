@@ -8,3 +8,7 @@ tyro
 requests
 gradio
 scikit-image
+torch
+torchvision
+torchaudio
+labml-nn
