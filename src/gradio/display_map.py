@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Literal, Optional, List, Tuple
 from enum import IntEnum
 
 import cv2
@@ -33,22 +33,22 @@ class RETURN_STEP_OPTIONS(IntEnum):
 
 
 def plot_map(
-    shape: shapely.MultiPolygon|None=None,
-    height_map: np.ndarray|None=None,
-    towns: list[Town]|None=None,
-    roads: RoadGraph|None=None,
+    shape: Optional[shapely.MultiPolygon]=None,
+    height_map: Optional[np.ndarray]=None,
+    towns: Optional[List[Town]]=None,
+    roads: Optional[RoadGraph]=None,
     return_step: Literal['empty', 'shape', 'height_map', 'towns', 'roads']='roads',
     *,
-    resolution: int|None=None,
-    max_height: float|None=None,
+    resolution: Optional[int]=None,
+    max_height: Optional[float]=None,
     num_contour_levels: int=4,
     contour_pixel_width: int=3,
-    contour_color: tuple[int,int,int]=(170,170,170),
+    contour_color: Tuple[int,int,int]=(170,170,170),
     min_contour_length: int=10,
     shape_pixel_width: int=10,
-    shape_color: tuple[int,int,int]=(0,0,0),
-    contour_is_probably_not_closed_threshold: float|None=None,
-    towns_pixel_width: int|None=None,
+    shape_color: Tuple[int,int,int]=(0,0,0),
+    contour_is_probably_not_closed_threshold: Optional[float]=None,
+    towns_pixel_width: Optional[int]=None,
 ):
     """
     Get an array which is the map of the town
@@ -97,7 +97,8 @@ def plot_map(
         # color the map
         map_color = np.empty((*out_resolution, 3), dtype=np.uint8)
         for i in range(3):
-            map_color[..., i] = cv2.applyColorMap((simple_height_map * (255 / max_height)).astype(np.uint8), TERRAIN_COLORMAP[:, i])
+            colormapped = cv2.applyColorMap((simple_height_map * (255 / max_height)).astype(np.uint8), TERRAIN_COLORMAP[:, i])
+            map_color[..., i] = colormapped[..., 0]
         map_color[sea_mask] = WATER_COLOR
 
         # draw contours on the map
