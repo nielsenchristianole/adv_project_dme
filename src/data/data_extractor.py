@@ -73,14 +73,11 @@ class HeightMapProjector:
     def _save_lonlat_id_csv(self, filename: os.PathLike) -> None:
         longitudes, latitudes, _ = self._compute_lonlats()
         
-        # Determine the maximum length
+        # Pad to fit dataframe structure
         max_length = max(len(longitudes), len(latitudes))
-
-        # Extend longitudes and latitudes to the maximum length
         longitudes_extended = np.pad(longitudes, (0, max_length - len(longitudes)), constant_values=np.nan)
         latitudes_extended = np.pad(latitudes, (0, max_length - len(latitudes)), constant_values=np.nan)
 
-        # Create a DataFrame
         df = pd.DataFrame({
             'idx': np.arange(max_length),
             'longitudes': longitudes_extended,
@@ -215,10 +212,6 @@ class HeightMapProjector:
     def compute_cities(self, longitudes: np.ndarray, latitudes: np.ndarray) -> None:
         """
         Computes cities and copies them over to a csv. If a patch has no city, it won't have a csv file.
-        NOTE: Some cities get plotted outside the patch due to a bug perhaps? Or numerical stuff idk,
-        or I failed converting to T_x and T_y from center coords, but their positions seem right though, so idk...
-            - it's easy to check for, just check if the T_x or T_y is outside of the patch. (negative value or over the
-            patch px size)
         """    
         cities = pd.read_csv(self.city_csv_path)
 
@@ -241,13 +234,16 @@ class HeightMapProjector:
                 with open(json_metafile_path, 'w') as f:
                     json.dump(metadata, f, indent=4)
                 
+                # SKip if there are no cities within the boundaries
                 if len(cities_within_boundaries) == 0:
                     continue
-
+                
                 T_x, T_y = calc_lat_lon_to_tangent_xy(cities_within_boundaries['lat'].values, cities_within_boundaries['lon'].values, lat, lon, self.patch_size_km, self.patch_size_px)
-                cities_within_boundaries['T_x'] = T_x
-                cities_within_boundaries['T_y'] = T_y
-            
+                valid_indices = (T_x >= 0) & (T_x < self.patch_size_px) & (T_y >= 0) & (T_y < self.patch_size_px)
+                cities_within_boundaries = cities_within_boundaries[valid_indices]
+                cities_within_boundaries['T_x'] = T_x[valid_indices]
+                cities_within_boundaries['T_y'] = T_y[valid_indices]
+                
                 # Save the filtered cities to a CSV file
                 cities_within_boundaries.to_csv(lon_path / 'cities.csv', index=False)
 

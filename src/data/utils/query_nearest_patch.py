@@ -61,7 +61,7 @@ def show_plot(dataset_folder, path_folder, height_map=False):
 if __name__ == '__main__':
     # Example usage:
     csv_file = 'data/undistorted_data_ortho_2/lonlat_id.csv'
-    query_lon, query_lat = 179.729739,66.037321
+    query_lon, query_lat = 8.196084, 59.853582
 
   # Example longitude and latitude near the wrap-around boundary
     closest_folder = find_closest_folder(csv_file, query_lon, query_lat)
