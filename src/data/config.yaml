@@ -1,0 +1,10 @@
+shapefile_path: None
+height_netcdf_path: 'data/charts/GEBCO_2024.nc'
+city_csv_path: 'data/cities.csv'
+city_types: ['hamlet', 'town', 'village', 'city']
+output_dir: 'data/undistorted_data_ortho_2'
+plot: True
+
+# Define the patch resolution
+km_per_px_resolution: 0.5
+data_size_px: 512
