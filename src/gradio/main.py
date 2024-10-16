@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Literal, Optional, List
 
 import numpy as np
 import gradio as gr
@@ -155,15 +155,15 @@ with gr.Blocks() as demo:
             town_name_sampler,
             output_image])
     def generate_town(
-        shape: shapely.MultiPolygon|None,
-        height_map: np.ndarray|None,
-        towns: list[dict],
+        shape: Optional[shapely.MultiPolygon],
+        height_map: Optional[np.ndarray],
+        towns: List[dict],
         roads: RoadGraph,
         name_sampler: TownNameSampler,
         generation_method: Literal['Random', 'Custom'],
         num_towns: int,
         town_type: TOWN_TYPE,
-        town_config: list[str]
+        town_config: List[str]
     ) -> dict:
         possible_choices = np.where(height_map > 0)
         num_possible = len(possible_choices[0])
@@ -174,10 +174,7 @@ with gr.Blocks() as demo:
         if generation_method == 'Random':
             for _ in range(num_towns):
                 idx = np.random.choice(num_possible)
-                xy = (
-                    possible_choices[1][idx],
-                    possible_choices[0][idx])
-                z = height_map[*xy[::-1]]
+                z = height_map[possible_choices[0][idx], possible_choices[1][idx]]
                 is_coastal = np.random.choice([True, False])
                 town_type = np.random.choice(TOWN_TYPES)
                 
@@ -185,22 +182,19 @@ with gr.Blocks() as demo:
                     Town(
                         town_type=town_type,
                         is_coastal=is_coastal,
-                        xyz=[*xy, z],
+                        xyz=[possible_choices[1][idx], possible_choices[0][idx], z],
                         town_name=name_sampler.pop(town_type, is_coastal)))
 
         elif generation_method == 'Custom':
             # import pdb; pdb.set_trace()
             is_coastal = 'is_coastal' in town_config
             idx = np.random.choice(num_possible)
-            xy = (
-                possible_choices[1][idx],
-                possible_choices[0][idx])
-            z = height_map[*xy[::-1]]
+            z = height_map[possible_choices[0][idx], possible_choices[1][idx]]
             towns.append(
                 Town(
                     town_type = town_type,
                     is_coastal = is_coastal,
-                    xyz = [*xy, z],
+                    xyz = [possible_choices[1][idx], possible_choices[0][idx], z],
                     town_name = name_sampler.pop(town_type, is_coastal)))
         
         chart = plot_map(shape, height_map, towns, roads, return_step='roads' if roads['edges'] else 'towns')

@@ -12,7 +12,7 @@ authors = [
 ]
 description = "Advanced project in digital media engineering"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.8"
 classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent",

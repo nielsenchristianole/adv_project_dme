@@ -1,6 +1,6 @@
 import json
 import copy
-from typing import Literal
+from typing import Literal, Dict, List
 
 import cv2
 import numpy as np
@@ -11,7 +11,7 @@ from src.gradio.gradio_configs import TOWN_NAMES_PATH, ICON_DIR
 
 # load in town names and assert the structure
 with open(TOWN_NAMES_PATH, 'r') as f:
-    TOWN_NAMES: dict[TOWN_TYPE, dict[Literal['coastal', 'landlocked'], list[str]]] = json.load(f)
+    TOWN_NAMES: Dict[TOWN_TYPE, Dict[Literal['coastal', 'landlocked'], List[str]]] = json.load(f)
     _all_n = set()
     for _tt, _d2 in TOWN_NAMES.items():
         assert _tt in TOWN_TYPES
@@ -66,9 +66,9 @@ class GetIcon:
             path = ICON_DIR / f'{town_type}.png'
             if not path.exists():
                 raise FileNotFoundError(f'Icon for town type {town_type} not found at {path}')
-            im = cv2.imread(path, flags=cv2.IMREAD_UNCHANGED)
+            im = cv2.imread(str(path), flags=cv2.IMREAD_UNCHANGED)
             name2mask[town_type] = (im[..., 3] != 0).astype(np.uint8)
-        self.name2mask: dict[TOWN_TYPE, np.ndarray] = name2mask
+        self.name2mask: Dict[TOWN_TYPE, np.ndarray] = name2mask
     
     def get(self, town_type: TOWN_TYPE, icon_size: int, color: np.ndarray) -> np.ndarray:
 
