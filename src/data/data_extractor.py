@@ -229,13 +229,12 @@ class HeightMapProjector:
 
                 # Compute cities within the lonlat boundaries
                 cities_within_boundaries = filter_chunk(cities, left_lon, right_lon, bot_lat, top_lat)
-
-                metadata['nr_cities'] = len(cities_within_boundaries)
-                with open(json_metafile_path, 'w') as f:
-                    json.dump(metadata, f, indent=4)
                 
                 # SKip if there are no cities within the boundaries
                 if len(cities_within_boundaries) == 0:
+                    metadata['nr_cities'] = 0
+                    with open(json_metafile_path, 'w') as f:
+                        json.dump(metadata, f, indent=4)
                     continue
                 
                 T_x, T_y = calc_lat_lon_to_tangent_xy(cities_within_boundaries['lat'].values, cities_within_boundaries['lon'].values, lat, lon, self.patch_size_km, self.patch_size_px)
@@ -243,6 +242,10 @@ class HeightMapProjector:
                 cities_within_boundaries = cities_within_boundaries[valid_indices]
                 cities_within_boundaries['T_x'] = T_x[valid_indices]
                 cities_within_boundaries['T_y'] = T_y[valid_indices]
+                
+                metadata['nr_cities'] = len(cities_within_boundaries)
+                with open(json_metafile_path, 'w') as f:
+                    json.dump(metadata, f, indent=4)
                 
                 # Save the filtered cities to a CSV file
                 cities_within_boundaries.to_csv(lon_path / 'cities.csv', index=False)
