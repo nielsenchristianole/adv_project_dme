@@ -15,7 +15,7 @@ sub_dirs = ['contours_orig']
 nc_files = ['./data/charts/GEBCO_2024.nc', './data/charts/GEBCO_2024_sub_ice_topo.nc']
 height_offsets = np.arange(0, 9000, 25, np.int16)
 
-mult = 2
+mult = 1
 
 diameter_range = (mult * 80_000, mult * 128_000)
 

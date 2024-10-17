@@ -1,18 +1,15 @@
 import os
 from pathlib import Path
-from typing import List, Tuple, Union, Iterable, Optional
+from typing import Optional, Literal
 
 import cv2
-import tqdm
 import numpy as np
 import geopandas as gpd
-import pandas as pd
 import matplotlib.pyplot as plt
-import shapely
-import scipy.spatial
 
 import torch
-from torch.utils.data import Dataset, DataLoader
+import torch.utils.data
+from torch.utils.data import Dataset
 from torchvision import transforms
 
 
@@ -23,9 +20,12 @@ class ShapeData(Dataset):
         path: os.PathLike,
         im_size: int=256,
         *,
+        mode: Literal['train', 'val', 'test']='train',
+        val_split: float=0.1,
+        test_split: float=0.1,
         dtype: Optional[torch.dtype]=None,
-        device: Optional[torch.device]=None,
-        pix2m=2000
+        pix2m=2000,
+        seed: int=42069
     ) -> None:
         super().__init__()
 
@@ -40,6 +40,25 @@ class ShapeData(Dataset):
             raise ValueError('No contours found within the specified range')
         df = df[mask]
 
+        # split data
+        assert mode in ['train', 'val', 'test'], 'mode must be one of "train", "val", "test"'
+        assert val_split + test_split < 1, 'val_split + test_split must be less than 1'
+
+        generator = np.random.default_rng(seed)
+        datapoint_ids = df.index
+        num_datapoints = len(datapoint_ids)
+        evaluation_datapoints = generator.choice(datapoint_ids, int(np.ceil(num_datapoints * (val_split + test_split))), replace=False)
+        train_datapoints = np.setdiff1d(datapoint_ids, evaluation_datapoints)
+        val_datapoints = generator.choice(evaluation_datapoints, int(np.floor(num_datapoints * val_split)), replace=False)
+        test_datapoints = np.setdiff1d(evaluation_datapoints, val_datapoints)
+
+        if mode == 'train':
+            df = df.loc[train_datapoints]
+        elif mode == 'val':
+            df = df.loc[val_datapoints]
+        elif mode == 'test':
+            df = df.loc[test_datapoints]
+
         # get contours
         centers = np.array([list(c.coords) for c in df.minimum_bounding_circle().centroid]).squeeze(1)
         contours = [np.array(list(geom.exterior.coords)) for geom in df.geometry]
@@ -47,7 +66,6 @@ class ShapeData(Dataset):
 
         # set attributes
         self.im_size = im_size
-        self.device = device if device is not None else torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.dtype = dtype if dtype is not None else torch.float32
 
         self.transform = transforms.Compose([
@@ -68,8 +86,9 @@ class ShapeData(Dataset):
 
     @staticmethod
     def mirror(points: np.ndarray) -> np.ndarray:
-        return points[::-1]
-    
+        points[:,0] = -points[:,0]
+        return points
+
     @staticmethod
     def rotate(points: np.ndarray, angle: float) -> np.ndarray:
         c, s = np.cos(angle), np.sin(angle)
@@ -80,7 +99,7 @@ class ShapeData(Dataset):
         im = np.zeros((self.im_size, self.im_size), dtype=np.uint8)
         im = cv2.drawContours(im, (points + self.im_size / 2)[:, None].astype(int), -1, 255, thickness=cv2.FILLED)
         cv2.fillPoly(im, pts=[(points + self.im_size / 2)[:, None].astype(int)], color=255)
-        return torch.tensor(im[None], dtype=self.dtype, device=self.device)
+        return torch.tensor(im[None], dtype=self.dtype)
 
     def __getitem__(self, idx):
         contour = self.contours[idx]
@@ -89,16 +108,23 @@ class ShapeData(Dataset):
             contour = self.mirror(contour)
         angle = np.random.uniform(0, 2 * np.pi)
         contour = self.rotate(contour, angle)
-        return self.transform(self.get_im(contour))
+        return {
+            'image': self.transform(self.get_im(contour)).squeeze(0).unsqueeze(-1),
+        }
 
 
 
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
 
-    path = Path('./data/contours/df_prefilter/df.shp')
-    dataset = ShapeData(path, im_size=64)
-    
+    im_size = 128
+
+    path = Path(f'./data/contours/df_{im_size}/df.shp')
+
+    for mode in ['test', 'val', 'train']:
+        dataset = ShapeData(path, im_size=im_size, mode=mode)
+        print(f'{mode}: {len(dataset)}')
+        break
 
     while True:
         fig, axes = plt.subplots(2, 2, figsize=(10, 10))

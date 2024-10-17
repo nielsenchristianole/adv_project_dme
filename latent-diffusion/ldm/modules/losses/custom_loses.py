@@ -17,7 +17,7 @@ class STEFunction(torch.autograd.Function):
     """
     @staticmethod
     def forward(ctx, input):
-        return (input > 0).float()
+        return (input > 0).float() * 2.0 - 1.0
 
     @staticmethod
     def backward(ctx, grad_output):
@@ -118,7 +118,7 @@ class VaeLossWithDiscriminator(ABC, nn.Module):
             disc_factor = adopt_weight(self.disc_factor, global_step, threshold=self.discriminator_iter_start)
             loss = nll_loss + self.kl_weight * kl_loss + d_weight * disc_factor * g_loss
 
-            log = {"{}/total_loss".format(split): loss.clone().detach().mean(), "{}/logvar".format(split): self.logvar.detach(),
+            log = {"{}/total_loss".format(split): loss.clone().detach().mean(),
                    "{}/kl_loss".format(split): kl_loss.detach().mean(), "{}/nll_loss".format(split): nll_loss.detach().mean(),
                    "{}/rec_loss".format(split): nll_loss.detach().mean(),
                    "{}/d_weight".format(split): d_weight.detach(),
