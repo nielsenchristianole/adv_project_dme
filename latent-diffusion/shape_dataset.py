@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import Optional, Literal
+from typing import Optional, Literal, Union
 
 import cv2
 import numpy as np
@@ -11,6 +11,8 @@ import torch
 import torch.utils.data
 from torch.utils.data import Dataset
 from torchvision import transforms
+
+from ldm.modules.diffusionmodules.util import timestep_embedding
 
 
 class ShapeData(Dataset):
@@ -108,14 +110,55 @@ class ShapeData(Dataset):
             contour = self.mirror(contour)
         angle = np.random.uniform(0, 2 * np.pi)
         contour = self.rotate(contour, angle)
+        image = self.transform(self.get_im(contour)).squeeze(0).unsqueeze(-1)
+        size = (image > 0).float().mean()[None]
+
         return {
-            'image': self.transform(self.get_im(contour)).squeeze(0).unsqueeze(-1),
+            'image': image,
+            'class_label': size,
+            'human_label': f'size={size.item():.2f}',
         }
 
+
+class SinusoidalEmbedder(torch.nn.Module):
+
+    def __init__(
+        self,
+        key: str,
+        emb_dim: int=256,
+        max_period: Union[float,int]=1,
+        integer_to_continuous: bool=False,
+        use_deterministic: Optional[bool]=None,
+        scale: float=1.0
+    ):
+        self.key = key
+        self.scale = scale
+        self.emb_dim = emb_dim
+        self.max_period = max_period
+        self.integer_to_continuous = integer_to_continuous
+        self.use_deterministic = use_deterministic
+        super().__init__()
+
+    def forward(self, xc: dict) -> torch.Tensor:
+        time = xc[self.key]
+        if self.integer_to_continuous:
+            time += torch.tensor((0.5,)) if self.use_deterministic else torch.rand((1,))
+
+        return timestep_embedding(self.scale * time, self.emb_dim, max_period=self.max_period)
+
+    def sanity_check(self, num_samples: Optional[int]=None) -> None:
+        num_samples = num_samples if num_samples is not None else 2 * self.emb_dim
+        time = torch.linspace(0, self.max_period, num_samples)[:, None]
+        emb = self.forward({self.key: time})
+        plt.imshow(emb.squeeze(1).numpy())
+        plt.show()
 
 
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
+
+    SinusoidalEmbedder('time', max_period=80.0).sanity_check()
+    quit()
 
     im_size = 128
 
