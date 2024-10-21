@@ -533,6 +533,9 @@ if __name__ == "__main__":
 
         # model
         model = instantiate_from_config(config.model)
+        from ldm.models.diffusion.ddpm import LatentDiffusion
+        if isinstance(model, LatentDiffusion) and not cpu:
+            model.logvar = model.logvar.cuda() # hot fix, since this isn't moved to the correct device
 
         # trainer and callbacks
         trainer_kwargs = dict()
