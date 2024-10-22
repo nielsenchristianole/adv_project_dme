@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Optional, Literal
 
 import cv2
+import tqdm
 import numpy as np
 import geopandas as gpd
 import matplotlib.pyplot as plt
@@ -13,6 +14,8 @@ from torch.utils.data import Dataset
 from torchvision import transforms
 
 
+# TODO: There is some bug in some of the indexes, filter those out somehow
+
 class HeightData(Dataset):
 
     def __init__(
@@ -21,7 +24,7 @@ class HeightData(Dataset):
         im_size: int=256,
         data_im_size: int=724,
         *,
-        mode: Literal['train', 'val', 'test']='train',
+        mode: Literal['train', 'val', 'test', 'all']='train',
         val_split: float=0.1,
         test_split: float=0.1,
         dtype: Optional[torch.dtype]=None,
@@ -40,7 +43,6 @@ class HeightData(Dataset):
             raise NotImplementedError(data_im_size)
 
         # split data
-        assert mode in ['train', 'val', 'test'], 'mode must be one of "train", "val", "test"'
         assert val_split + test_split < 1, 'val_split + test_split must be less than 1'
 
         generator = np.random.default_rng(seed)
@@ -57,6 +59,10 @@ class HeightData(Dataset):
             df = df.loc[val_datapoints]
         elif mode == 'test':
             df = df.loc[test_datapoints]
+        elif mode == 'all':
+            pass
+        else:
+            raise ValueError(f'Unknown mode: {mode}')
 
         # get contours
         self.contours = [np.array(list(geom.exterior.coords)) for geom in df.geometry]
@@ -97,7 +103,7 @@ class HeightData(Dataset):
         cv2.fillPoly(im, pts=[(points)[:, None].astype(int)], color=255)
         return im
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx, *, mirror: Optional[bool]=None, angle: Optional[float]=None):
 
         # load
         contour = self.contours[idx]
@@ -105,12 +111,12 @@ class HeightData(Dataset):
         height_map = np.load(self.paths[idx])[..., None].astype(np.float32)
 
         # mirror
-        if np.random.rand() > 0.5:
+        if mirror or ((mirror is None) and (np.random.rand() > 0.5)):
             contour[:, 0] = self.data_im_size - contour[:, 0]
             height_map = np.flip(height_map, axis=1)
 
         # rotate
-        angle = np.random.uniform(0, 2 * np.pi)
+        angle = angle if angle is not None else np.random.uniform(0, 2 * np.pi)
         rot_mat = cv2.getRotationMatrix2D(self.data_im_center, angle, 1.0)
 
         contour = np.concatenate((contour, np.ones((contour.shape[0], 1))), axis=1) @ rot_mat.T
@@ -149,6 +155,21 @@ if __name__ == '__main__':
 
     path = f'./data/height_contours/df_{im_size}/df.shp'
 
+    dataset = HeightData(path, im_size=im_size, mode='all')
+    errors = list()
+    for angle in tqdm.tqdm(np.linspace(0, 2 * np.pi, 10, endpoint=False), 'angle', leave=False):
+        for mirror in tqdm.tqdm([True, False], 'mirror', leave=False):
+            for idx in tqdm.trange(len(dataset), desc='idx', leave=False):
+                try:
+                    data = dataset.__getitem__(idx, mirror=mirror, angle=angle)
+                except Exception as e:
+                    errors.append((angle, mirror, idx, e))
+    if errors:
+        print('Errors:')
+        print(len(errors))
+        print(errors)
+    quit()
+
     for mode in ['test', 'val', 'train']:
         dataset = HeightData(path, im_size=im_size, mode=mode)
         print(f'{mode}: {len(dataset)}')
@@ -174,14 +195,3 @@ if __name__ == '__main__':
         ax.axis('off')
     fig.suptitle('Random contour transforms')
     plt.show()
-
-
-
-
-
-"""
-Christian
-Been at trifork for little over a year
-Student at DTU where I'll start master thesis december
-In my sparetime I like to run and cook
-"""
