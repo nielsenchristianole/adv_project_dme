@@ -91,7 +91,7 @@ class HeightData(Dataset):
     def __len__(self):
         return len(self.contours)
 
-    def get_mask(self, points: np.ndarray) -> torch.Tensor:
+    def get_mask(self, points: np.ndarray) -> np.ndarray:
         im = np.zeros((self.data_im_size, self.data_im_size), dtype=np.uint8)
         im = cv2.drawContours(im, points[:, None].astype(int), -1, 255, thickness=cv2.FILLED)
         cv2.fillPoly(im, pts=[(points)[:, None].astype(int)], color=255)
