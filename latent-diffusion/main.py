@@ -297,7 +297,8 @@ class ImageLogger(Callback):
         self.logger_log_images = {
             pl.loggers.TestTubeLogger: self._testtube,
         }
-        self.log_steps = [2 ** n for n in range(int(np.log2(self.batch_freq)) + 1)]
+        import math
+        self.log_steps = [4 ** n for n in range(int(math.log(self.batch_freq, 4)) + 1)]
         if not increase_log_steps:
             self.log_steps = [self.batch_freq]
         self.clamp = clamp
@@ -612,7 +613,7 @@ if __name__ == "__main__":
                     "batch_frequency": 750,
                     "max_images": 4,
                     "clamp": True,
-                    "increase_log_steps": False,
+                    "increase_log_steps": True, # log a lot?
                 }
             },
             "learning_rate_logger": {
