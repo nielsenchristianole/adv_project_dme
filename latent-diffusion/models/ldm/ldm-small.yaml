@@ -1,5 +1,5 @@
 model:
-  base_learning_rate: 1.5e-04
+  base_learning_rate: 1.5e-05
   target: ldm.models.diffusion.ddpm.LatentDiffusion
   params:
     linear_start: 0.0015
@@ -8,31 +8,34 @@ model:
     log_every_t: 200
     timesteps: 1000
     cond_stage_config:
-      target: dataset.ReadDictEmbedder
+      target: shape_dataset.SinusoidalEmbedder
       params:
         key: class_label
+        emb_dim: 256
+        max_period: 80
+        scale: 80
     first_stage_key: image # key til batch dict for pixel input
     cond_stage_key: class_label # if different from first_stage_key, this will be input so ddpm
-    image_size: 64 # used for z_T sampling
-    channels: 2 # used for z_T sampling
+    image_size: 32 # used for z_T sampling
+    channels: 1 # used for z_T sampling
     cond_stage_trainable: false # in the batch for the datalaoder, give vertebrae_embedding as tensor the same dim order as image
     conditioning_key: crossattn # I think this is the best
     monitor: val/loss_simple_ema
     unet_config:
       target: ldm.modules.diffusionmodules.openaimodel.UNetModel
       params:
-        image_size: 64
-        in_channels: 2
-        model_channels: 32
-        out_channels: 2
+        image_size: 32
+        in_channels: 1
+        model_channels: 64
+        out_channels: 1
         num_res_blocks: 2
         attention_resolutions:
         - 2
-        - 3
         - 4
+        - 8
         channel_mult:
         - 1
-        - 3
+        - 2
         - 3
         - 4
         conv_resample: false
@@ -43,16 +46,16 @@ model:
     first_stage_config:
       target: ldm.models.autoencoder.AutoencoderKL
       params:
-        ckpt_path: ./logs/2024-09-30T00-11-53_config/checkpoints/epoch=000154.ckpt
+        ckpt_path: ./logs/2024-10-21T16-49-12_shape_model_small/checkpoints/epoch=000046.ckpt
         monitor: val/rec_loss
-        embed_dim: 2
+        embed_dim: 1
         ddconfig:
           double_z: true
-          z_channels: 2
-          resolution: 256
+          z_channels: 1
+          resolution: 128
           in_channels: 1
           out_ch: 1
-          ch: 32
+          ch: 64
           ch_mult:
           - 1
           - 2
@@ -66,17 +69,17 @@ model:
 data:
   target: main.DataModuleFromConfig
   params:
-    batch_size: 16
+    batch_size: 50
     wrap: false
     train:
-      target: dataset.AutoEncoderDataset
+      target: shape_dataset.ShapeData
       params:
-        csv_file: './data/data/dataframe.csv'
-        data_root_dir: './data/'
+        path: '../data/contours/df_128/df.shp'
+        im_size: 128
         mode: train
     validation:
-      target: dataset.AutoEncoderDataset
+      target: shape_dataset.ShapeData
       params:
-        csv_file: './data/data/dataframe.csv'
-        data_root_dir: './data/'
+        path: '../data/contours/df_128/df.shp'
+        im_size: 128
         mode: val

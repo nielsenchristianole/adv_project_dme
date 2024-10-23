@@ -119,8 +119,9 @@ class VaeLossWithDiscriminator(ABC, nn.Module):
             loss = nll_loss + self.kl_weight * kl_loss + d_weight * disc_factor * g_loss
 
             log = {"{}/total_loss".format(split): loss.clone().detach().mean(),
-                   "{}/kl_loss".format(split): kl_loss.detach().mean(), "{}/nll_loss".format(split): nll_loss.detach().mean(),
+                   "{}/kl_loss".format(split): kl_loss.detach().mean(),
                    "{}/rec_loss".format(split): nll_loss.detach().mean(),
+                   "{}/nll_loss".format(split): nll_loss.detach().mean(),
                    "{}/d_weight".format(split): d_weight.detach(),
                    "{}/disc_factor".format(split): torch.tensor(disc_factor),
                    "{}/g_loss".format(split): g_loss.detach().mean(),
