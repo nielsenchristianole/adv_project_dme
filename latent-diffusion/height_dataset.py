@@ -27,7 +27,8 @@ class HeightData(Dataset):
         val_split: float=0.1,
         test_split: float=0.1,
         dtype: Optional[torch.dtype]=None,
-        seed: int=42069
+        seed: int=42069,
+        height_mean: float=300.0,
     ) -> None:
         super().__init__()
 
@@ -82,7 +83,7 @@ class HeightData(Dataset):
             transforms.Normalize(mean=127.5, std=127.5),
         ])
         self.height_transform = transforms.Compose([
-            # transforms.Normalize(mean=0, std=1),
+            transforms.Lambda(lambda t: -2 * torch.exp(-t / height_mean) + 1),
         ])
 
     def _read_file(self) -> gpd.GeoDataFrame:
@@ -157,8 +158,24 @@ if __name__ == '__main__':
     key = 'image'
 
     path = f'./data/height_contours/df_{im_size}/df.shp'
-
     dataset = HeightData(path, im_size=im_size, mode='all')
+
+    # data = list()
+    # data_raw = list()
+    # fig, ax = plt.subplots(2)
+    # for i in tqdm.trange(len(dataset), desc='getting height hist'):
+    #     out = dataset.__getitem__(i, mirror=False, angle=0.)
+    #     im = out['image'].cpu().numpy().squeeze(-1).ravel()
+    #     mask = (out['shape'].cpu().numpy().squeeze(-1).ravel() > 0)
+    #     data.append(
+    #         im[mask])
+    #     data_raw.append(im)
+    # data = np.concatenate(data)
+    # data_raw = np.concatenate(data_raw)
+    # ax[0].hist(data)
+    # ax[0].hist(np.exp(-data))
+    # plt.show()
+
     for i in [487, 3968, 3969, 7524]:
         fig, ax = plt.subplots(2)
         ax = ax.flatten()
