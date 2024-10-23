@@ -104,6 +104,7 @@ class HeightMapProjector:
         if self.km_per_px_resolution == 'dynamic':
             self.km_per_px_resolution = EARTH_CIRCUMFERENCE / self.elevation.shape[1]
 
+        print("[STATUS] computing lon lats started")
         longitudes, latitudes, delta_longitude = self._compute_lonlats()
         self._save_lonlat_id_csv(self.output_dir / 'lonlat_id.csv')
         
@@ -116,6 +117,8 @@ class HeightMapProjector:
         }
         with open(self.output_dir / 'dataset_metadata.json', 'w') as f:
             json.dump(dataset_meta, f, indent=4)
+            
+        print("[STATUS] computing lon lats done")
             
         for i, lat in enumerate(tqdm(latitudes, desc='Processing longitudes')):
             lat_path = self.output_dir / 'data' / str(i) 
@@ -145,8 +148,6 @@ class HeightMapProjector:
                 }
                 with open(lon_path / 'metadata.json', 'w') as f:
                     json.dump(metadata, f, indent=4)
-        
-        return longitudes, latitudes
     
     def _extract_height_map_slice(self, height_map: np.ndarray, latitudes: np.ndarray, longitudes: np.ndarray) -> tuple[np.ndarray, float, float, float, float]:
         """Returns a sliced height map and boundary box (not of the height map!) of the latitudes and longitudes for the projection"""
@@ -273,7 +274,8 @@ class HeightMapProjector:
                 plt.close()
         
     def run(self) -> None:
-        longitudes, latitudes = self.compute_height_maps()
+        self.compute_height_maps()
+        longitudes, latitudes, _ = self._compute_lonlats()
         self.compute_cities(longitudes, latitudes)
         if self.plot:
             self.plot_height_map_w_cities()
@@ -281,9 +283,15 @@ class HeightMapProjector:
 
 if __name__ == '__main__':
     import yaml
+    
     with open('src/data/config.yaml') as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
     
+    print("[STATUS] Config loaded")
+    
     projector = HeightMapProjector(**config)
+    
+    print("[STATUS] Projector initialized")
+    
     projector.run()
  
