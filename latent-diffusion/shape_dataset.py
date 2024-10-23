@@ -71,7 +71,7 @@ class ShapeData(Dataset):
         self.dtype = dtype if dtype is not None else torch.float32
 
         self.transform = transforms.Compose([
-            transforms.Normalize(mean=127.5, std=127.5),
+            transforms.Lambda(lambda t: t / 255),
         ])
 
     def _read_file(self) -> gpd.GeoDataFrame:

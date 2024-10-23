@@ -1,4 +1,7 @@
+from typing import Literal
+
 import torch
+from torch.distributions import ContinuousBernoulli
 import pytorch_lightning as pl
 import torch.nn.functional as F
 from contextlib import contextmanager
@@ -7,7 +10,6 @@ from taming.modules.vqvae.quantize import VectorQuantizer2 as VectorQuantizer
 
 from ldm.modules.diffusionmodules.model import Encoder, Decoder
 from ldm.modules.distributions.distributions import DiagonalGaussianDistribution
-
 from ldm.util import instantiate_from_config
 
 
@@ -292,8 +294,12 @@ class AutoencoderKL(pl.LightningModule):
                  image_key="image",
                  colorize_nlabels=None,
                  monitor=None,
+                 im_recon_mode: Literal['identity', 'binary', 'continuous'] = 'identity',
+                 negative_1_to_1: bool = True
                  ):
         super().__init__()
+        self.im_recon_mode = im_recon_mode
+        self.negative_1_to_1 = negative_1_to_1
         self.image_key = image_key
         self.encoder = Encoder(**ddconfig)
         self.decoder = Decoder(**ddconfig)
@@ -341,7 +347,8 @@ class AutoencoderKL(pl.LightningModule):
         dec = self.decode(z)
         return dec, posterior
 
-    def get_input(self, batch, k):
+    @staticmethod
+    def get_input(batch, k):
         x = batch[k]
         if len(x.shape) == 3:
             x = x[..., None]
@@ -355,7 +362,7 @@ class AutoencoderKL(pl.LightningModule):
         if optimizer_idx == 0:
             # train encoder+decoder+logvar
             aeloss, log_dict_ae = self.loss(inputs, reconstructions, posterior, optimizer_idx, self.global_step,
-                                            last_layer=self.get_last_layer(), split="train")
+                                            last_layer=self.get_last_layer(), split="train", batch=batch)
             self.log("aeloss", aeloss, prog_bar=True, logger=True, on_step=True, on_epoch=True)
             self.log_dict(log_dict_ae, prog_bar=False, logger=True, on_step=True, on_epoch=False)
             return aeloss
@@ -363,7 +370,7 @@ class AutoencoderKL(pl.LightningModule):
         if optimizer_idx == 1:
             # train the discriminator
             discloss, log_dict_disc = self.loss(inputs, reconstructions, posterior, optimizer_idx, self.global_step,
-                                                last_layer=self.get_last_layer(), split="train")
+                                                last_layer=self.get_last_layer(), split="train", batch=batch)
 
             self.log("discloss", discloss, prog_bar=True, logger=True, on_step=True, on_epoch=True)
             self.log_dict(log_dict_disc, prog_bar=False, logger=True, on_step=True, on_epoch=False)
@@ -373,10 +380,10 @@ class AutoencoderKL(pl.LightningModule):
         inputs = self.get_input(batch, self.image_key)
         reconstructions, posterior = self(inputs)
         aeloss, log_dict_ae = self.loss(inputs, reconstructions, posterior, 0, self.global_step,
-                                        last_layer=self.get_last_layer(), split="val")
+                                        last_layer=self.get_last_layer(), split="val", batch=batch)
 
         discloss, log_dict_disc = self.loss(inputs, reconstructions, posterior, 1, self.global_step,
-                                            last_layer=self.get_last_layer(), split="val")
+                                            last_layer=self.get_last_layer(), split="val", batch=batch)
 
         self.log("val/rec_loss", log_dict_ae["val/rec_loss"])
         self.log_dict(log_dict_ae)
@@ -409,10 +416,22 @@ class AutoencoderKL(pl.LightningModule):
                 assert xrec.shape[1] > 3
                 x = self.to_rgb(x)
                 xrec = self.to_rgb(xrec)
-            log["samples"] = self.decode(torch.randn_like(posterior.sample()))
-            log["reconstructions"] = xrec
-        log["inputs"] = x
+            log["samples"] = self.reconstruction_to_image(self.decode(torch.randn_like(posterior.sample())))
+            log["reconstructions"] = self.reconstruction_to_image(xrec)
+        log["inputs"] = 2 * x - 1
         return log
+    
+    def reconstruction_to_image(self, x):
+        if self.im_recon_mode == 'idenity':
+            return x
+        elif self.im_recon_mode == 'binary':
+            x = (x > 0).type_as(x)
+        elif self.im_recon_mode == 'continuous':
+            x = ContinuousBernoulli(logits=x).probs
+        
+        if self.negative_1_to_1:
+            return 2 * x - 1
+        return x
 
     def to_rgb(self, x):
         assert self.image_key == "segmentation"

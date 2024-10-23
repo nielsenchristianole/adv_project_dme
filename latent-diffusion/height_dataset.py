@@ -23,6 +23,7 @@ class HeightData(Dataset):
         im_size: int=128,
         data_im_size: int=724,
         *,
+        root_dir: Optional[os.PathLike]=None,
         mode: Literal['train', 'val', 'test', 'all']='train',
         val_split: float=0.1,
         test_split: float=0.1,
@@ -64,9 +65,13 @@ class HeightData(Dataset):
         else:
             raise ValueError(f'Unknown mode: {mode}')
 
+        if root_dir is None:
+            root_dir = './'
+        root_dir = Path(root_dir)
+        self.paths = [root_dir / p for p in df['path']]
+
         # get contours
         self.contours = [np.array(list(geom.exterior.coords)) for geom in df.geometry]
-        self.paths = [Path(p) for p in df['path']]
         self.offsets = df['offset'].to_numpy()
         self.centers = df[['center_x', 'center_y']].to_numpy()
 
@@ -80,10 +85,10 @@ class HeightData(Dataset):
         self.dtype = dtype if dtype is not None else torch.float32
 
         self.shape_transform = transforms.Compose([
-            transforms.Normalize(mean=127.5, std=127.5),
+            transforms.Lambda(lambda t: t / 255),
         ])
         self.height_transform = transforms.Compose([
-            transforms.Lambda(lambda t: -2 * torch.exp(-t / height_mean) + 1),
+            transforms.Lambda(lambda t: 1 - torch.exp(-t / height_mean)),
         ])
 
     def _read_file(self) -> gpd.GeoDataFrame:
@@ -144,8 +149,8 @@ class HeightData(Dataset):
             'image': self.height_transform(torch.tensor(height_map[None], dtype=self.dtype)).squeeze(0).unsqueeze(-1),
             'shape': self.shape_transform(torch.tensor(shape[None], dtype=self.dtype)).squeeze(0).unsqueeze(-1),
             'human_label': f'{self.paths[idx]}\n{self.centers[idx]}',
-            'contour': contour,
-            'center_coord': self.centers[idx],
+            # 'contour': [contour],
+            # 'center_coord': self.centers[idx],
             # 'height_map_unmasked': height_map_unmasked
         }
 
