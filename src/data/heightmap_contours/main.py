@@ -3,7 +3,6 @@ from pathlib import Path
 import cv2
 import tqdm
 import numpy as np
-import netCDF4
 import geopandas as gpd
 import pandas as pd
 import shapely
@@ -12,7 +11,7 @@ import shapely
 
 PATH = './data/gebco_flat/data/'
 OUT_DIR = './data/height_contours/df_128/'
-height_offsets = np.linspace(0, 10_000, 25)
+height_offsets = np.arange(0, 10_000, 25)
 sanity_check = 0
 diameter_range = (80, 128)
 
@@ -27,7 +26,7 @@ if sanity_check:
     lat_list = np.random.choice(lat_list, sanity_check, replace=False)
 
 total = 0
-for lat_dir in (pbar := tqdm.tqdm(lat_list, 'lat', leave=False)):
+for lat_dir in (pbar := tqdm.tqdm(lat_list, 'lat', leave=True)):
     lat_idx = int(lat_dir.name)
 
     lon_list = list(lat_dir.iterdir())
@@ -49,11 +48,15 @@ for lat_dir in (pbar := tqdm.tqdm(lat_list, 'lat', leave=False)):
 
             contours, hierarchy = cv2.findContours(
                 mask.astype(np.uint8),
-                cv2.RETR_TREE,
+                cv2.RETR_CCOMP,
                 cv2.CHAIN_APPROX_SIMPLE)
             
             if not contours:
                 continue
+
+            # we want hills, not valleys
+            outer = (hierarchy[0, :, 3] == -1)
+            contours = [contours[i] for i in range(len(contours)) if outer[i]]
 
             geoms = map(lambda x: x.squeeze(1), contours)
             geoms = filter(lambda x: x.shape[0] >= 4, geoms)

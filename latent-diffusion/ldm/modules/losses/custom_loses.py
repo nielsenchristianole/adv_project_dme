@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Tuple
+from typing import Tuple, Optional
 
 import torch
 import torch.nn as nn
@@ -7,7 +7,7 @@ from torch.distributions import ContinuousBernoulli
 
 from taming.modules.losses.vqperceptual import LPIPS, NLayerDiscriminator, weights_init, hinge_d_loss,  vanilla_d_loss, adopt_weight
 from ldm.modules.distributions.distributions import DiagonalGaussianDistribution
-
+from ldm.models.autoencoder import AutoencoderKL
 
 class STEFunction(torch.autograd.Function):
     """
@@ -17,7 +17,7 @@ class STEFunction(torch.autograd.Function):
     """
     @staticmethod
     def forward(ctx, input):
-        return (input > 0).float() * 2.0 - 1.0
+        return (input > 0).float()
 
     @staticmethod
     def backward(ctx, grad_output):
@@ -83,19 +83,19 @@ class VaeLossWithDiscriminator(ABC, nn.Module):
         return d_weight
     
     @abstractmethod
-    def _forward(self, inputs: torch.Tensor, reconstructions: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def _forward(self, inputs: torch.Tensor, reconstructions: torch.Tensor, batch: Optional[dict]=None) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         This function takes the inputs and reconstructions and returns the nll loss and a processed reconstruction to be handed to the discriminator and perceptual loss
         """
 
     def forward(self, inputs: torch.Tensor, reconstructions: torch.Tensor, posteriors: DiagonalGaussianDistribution, optimizer_idx: int,
-                global_step: int, last_layer: torch.Tensor, split: str="train"):
+                global_step: int, last_layer: torch.Tensor, split: str="train", *, batch: Optional[dict]=None):
         
-        nll_loss, processed_reconstructions = self._forward(inputs, reconstructions)
+        nll_loss, processed_reconstructions = self._forward(inputs, reconstructions, batch)
 
         if self.perceptual_weight > 0:
-            p_loss = self.perceptual_loss(inputs.contiguous(), processed_reconstructions.contiguous())
-            nll_loss = nll_loss + self.perceptual_weight * p_loss
+            p_loss: torch.Tensor = self.perceptual_loss(inputs.contiguous(), processed_reconstructions.contiguous())
+            nll_loss = nll_loss + self.perceptual_weight * p_loss.sum(dim=[d for d in range(1, p_loss.dim())])
         nll_loss = torch.sum(nll_loss) / nll_loss.shape[0]
 
         kl_loss = posteriors.kl()
@@ -145,16 +145,23 @@ class VaeLossWithDiscriminator(ABC, nn.Module):
 
 class BernoulliWithDiscriminator(VaeLossWithDiscriminator):
 
-    def _forward(self, inputs: torch.Tensor, reconstructions: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def _forward(self, inputs: torch.Tensor, reconstructions: torch.Tensor, batch: Optional[dict]=None) -> Tuple[torch.Tensor, torch.Tensor]:
         nll_loss = torch.nn.functional.binary_cross_entropy_with_logits(reconstructions.contiguous(), inputs.contiguous(), reduction='none')
-        binarized_reconstructions = STEFunction.apply(reconstructions.contiguous())
+        nll_loss = torch.sum(nll_loss, dim=[d for d in range(1, nll_loss.dim())])
 
+        binarized_reconstructions = STEFunction.apply(reconstructions.contiguous())
         return nll_loss, binarized_reconstructions
 
 
 class ContinuousBernoulliWithDiscriminator(VaeLossWithDiscriminator):
 
-    def _forward(self, inputs: torch.Tensor, reconstructions: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def _forward(self, inputs: torch.Tensor, reconstructions: torch.Tensor, batch: Optional[dict]=None) -> Tuple[torch.Tensor, torch.Tensor]:
+
+        shape = AutoencoderKL.get_input(batch, 'shape')
 
         dist = ContinuousBernoulli(logits=reconstructions.contiguous())
-        return dist.log_prob(inputs.contiguous()), dist.probs.contiguous()
+        nll = - dist.log_prob(inputs.contiguous())
+        nll *= shape.type_as(nll)
+        nll = torch.sum(nll, dim=[d for d in range(1, nll.dim())])
+
+        return nll, dist.probs.contiguous()

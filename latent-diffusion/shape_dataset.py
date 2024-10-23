@@ -71,7 +71,7 @@ class ShapeData(Dataset):
         self.dtype = dtype if dtype is not None else torch.float32
 
         self.transform = transforms.Compose([
-            transforms.Normalize(mean=127.5, std=127.5),
+            transforms.Lambda(lambda t: t / 255),
         ])
 
     def _read_file(self) -> gpd.GeoDataFrame:
@@ -173,7 +173,7 @@ if __name__ == '__main__':
         fig, axes = plt.subplots(2, 2, figsize=(10, 10))
         idxs = np.random.choice(len(dataset), replace=False, size=4)
         for idx, ax in zip(idxs, axes.flatten()):
-            ax.imshow(dataset[idx].cpu().numpy().squeeze(0), cmap='gray')
+            ax.imshow(dataset[idx]['image'].cpu().numpy().squeeze(-1), cmap='gray')
             ax.axis('off')
         fig.suptitle('Random contours')
         fig.tight_layout()
@@ -182,7 +182,7 @@ if __name__ == '__main__':
     fig, axes = plt.subplots(8, 8, figsize=(40, 40))
     idx = np.random.choice(len(dataset))
     for ax in axes.flatten():
-        ax.imshow(dataset[idx].cpu().numpy().squeeze(0), cmap='gray')
+        ax.imshow(dataset[idx]['image'].cpu().numpy().squeeze(-1), cmap='gray')
         ax.axis('off')
     fig.suptitle('Random contour transforms')
     plt.show()
