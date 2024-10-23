@@ -5,6 +5,7 @@ from typing import Optional, Literal
 import cv2
 import tqdm
 import numpy as np
+import pandas as pd
 import geopandas as gpd
 import matplotlib.pyplot as plt
 
@@ -14,14 +15,12 @@ from torch.utils.data import Dataset
 from torchvision import transforms
 
 
-# TODO: There is some bug in some of the indexes, filter those out somehow
-
 class HeightData(Dataset):
 
     def __init__(
         self,
         path: os.PathLike,
-        im_size: int=256,
+        im_size: int=128,
         data_im_size: int=724,
         *,
         mode: Literal['train', 'val', 'test', 'all']='train',
@@ -68,6 +67,7 @@ class HeightData(Dataset):
         self.contours = [np.array(list(geom.exterior.coords)) for geom in df.geometry]
         self.paths = [Path(p) for p in df['path']]
         self.offsets = df['offset'].to_numpy()
+        self.centers = df[['center_x', 'center_y']].to_numpy()
 
         # set attributes
         self.im_size = im_size
@@ -75,7 +75,7 @@ class HeightData(Dataset):
 
         self.im_center = (im_size // 2, im_size // 2)
         self.data_im_center = (data_im_size // 2, data_im_size // 2)
-        
+
         self.dtype = dtype if dtype is not None else torch.float32
 
         self.shape_transform = transforms.Compose([
@@ -98,7 +98,7 @@ class HeightData(Dataset):
         return len(self.contours)
 
     def get_mask(self, points: np.ndarray) -> np.ndarray:
-        im = np.zeros((self.data_im_size, self.data_im_size), dtype=np.uint8)
+        im = np.zeros((self.im_size, self.im_size), dtype=np.uint8)
         im = cv2.drawContours(im, points[:, None].astype(int), -1, 255, thickness=cv2.FILLED)
         cv2.fillPoly(im, pts=[(points)[:, None].astype(int)], color=255)
         return im
@@ -109,40 +109,43 @@ class HeightData(Dataset):
         contour = self.contours[idx]
         offset = self.offsets[idx]
         height_map = np.load(self.paths[idx])[..., None].astype(np.float32)
+        center = self.centers[[idx]]
 
         # mirror
         if mirror or ((mirror is None) and (np.random.rand() > 0.5)):
             contour[:, 0] = self.data_im_size - contour[:, 0]
+            center[:, 0] = self.data_im_size - center[:, 0]
             height_map = np.flip(height_map, axis=1)
+
+        # crop
+        im_center = np.array(self.im_center)[None]
+        contour += im_center - center
+        top_left = np.round(center - np.array(im_center)[:, None]).astype(int).ravel()
+        bottom_right = top_left + self.im_size
+        height_map = height_map[top_left[1]:bottom_right[1], top_left[0]:bottom_right[0]]
 
         # rotate
         angle = angle if angle is not None else np.random.uniform(0, 2 * np.pi)
-        rot_mat = cv2.getRotationMatrix2D(self.data_im_center, angle, 1.0)
+        rot_mat = cv2.getRotationMatrix2D(self.im_center, angle, 1.0)
 
         contour = np.concatenate((contour, np.ones((contour.shape[0], 1))), axis=1) @ rot_mat.T
 
         shape = self.get_mask(contour)
 
         # mask
-        height_map = cv2.warpAffine(height_map, rot_mat, height_map.shape[1::-1], flags=cv2.INTER_LINEAR)
+        height_map = cv2.warpAffine(height_map[..., 0], rot_mat, (self.im_size, self.im_size), flags=cv2.INTER_LINEAR)
         height_map -= offset
+        # height_map_unmasked = height_map.copy()
         height_map[~shape.astype(bool)] = 0.
         height_map = np.clip(height_map, 0, np.inf)
 
-        # crop
-        mask_idxs = np.argwhere(shape)
-        center = (mask_idxs.min(axis=0) + mask_idxs.max(axis=0)) / 2
-        top_left = np.round(center - self.im_center).astype(int)
-        bottom_right = top_left + self.im_size
-        # assert (mask_idxs.max(axis=0) - mask_idxs.min(axis=0)).max() < self.im_size, 'contour too large'
-
-        shape = shape[top_left[0]:bottom_right[0], top_left[1]:bottom_right[1]]
-        height_map = height_map[top_left[0]:bottom_right[0], top_left[1]:bottom_right[1]]
-        
         return {
             'image': self.height_transform(torch.tensor(height_map[None], dtype=self.dtype)).squeeze(0).unsqueeze(-1),
             'shape': self.shape_transform(torch.tensor(shape[None], dtype=self.dtype)).squeeze(0).unsqueeze(-1),
-            'human_label': f'offset={offset:.2f}',
+            'human_label': f'{self.paths[idx]}\n{self.centers[idx]}',
+            'contour': contour,
+            'center_coord': self.centers[idx],
+            # 'height_map_unmasked': height_map_unmasked
         }
 
 
@@ -156,19 +159,33 @@ if __name__ == '__main__':
     path = f'./data/height_contours/df_{im_size}/df.shp'
 
     dataset = HeightData(path, im_size=im_size, mode='all')
-    errors = list()
-    for angle in tqdm.tqdm(np.linspace(0, 2 * np.pi, 10, endpoint=False), 'angle', leave=False):
-        for mirror in tqdm.tqdm([True, False], 'mirror', leave=False):
-            for idx in tqdm.trange(len(dataset), desc='idx', leave=False):
-                try:
-                    data = dataset.__getitem__(idx, mirror=mirror, angle=angle)
-                except Exception as e:
-                    errors.append((angle, mirror, idx, e))
-    if errors:
-        print('Errors:')
-        print(len(errors))
-        print(errors)
-    quit()
+    for i in [487, 3968, 3969, 7524]:
+        fig, ax = plt.subplots(2)
+        ax = ax.flatten()
+        out = dataset.__getitem__(i)
+        im = out[key].cpu().numpy().squeeze(-1)
+        ax[0].set_title(f'idx: {i}, min: {im.min():.2f}, max: {im.max():.2f}\nlabel: {out["human_label"]}')
+        ax[0].matshow(im, cmap='gray')
+        ax[0].axis('off')
+        ax[1].matshow(out['height_map_unmasked'], cmap='gray')
+        plt.show()
+    # errors = list()
+    # for angle in (pbar := tqdm.tqdm(np.linspace(0, 2 * np.pi, 10, endpoint=False), 'angle', leave=True)):
+    #     for mirror in tqdm.tqdm([True, False], 'mirror', leave=False):
+    #         for idx in tqdm.trange(len(dataset), desc='idx', leave=False):
+    #             try:
+    #                 data = dataset.__getitem__(idx, mirror=mirror, angle=angle)
+    #                 assert data['image'].shape == (im_size, im_size, 1)
+    #                 assert data['shape'].shape == (im_size, im_size, 1)
+    #             except Exception as e:
+    #                 errors.append((angle, mirror, idx, e))
+    #                 pbar.set_postfix_str(f'Errors: {len(errors)}')
+    # if errors:
+    #     df = pd.DataFrame(errors, columns=['angle', 'mirror', 'idx', 'error'])
+    #     series = (df.groupby('idx').count()['error'] > 0)
+    #     print(sorted(series[series].index.to_list()))
+    #     print()
+    #     import pdb; pdb.set_trace()
 
     for mode in ['test', 'val', 'train']:
         dataset = HeightData(path, im_size=im_size, mode=mode)
@@ -179,11 +196,11 @@ if __name__ == '__main__':
         fig, axes = plt.subplots(2, 2, figsize=(10, 10))
         idxs = np.random.choice(len(dataset), replace=False, size=4)
         for idx, ax in zip(idxs, axes.flatten()):
-            im = dataset[idx][key].cpu().numpy().squeeze(-1)
-            ax.set_title(f'idx: {idx}, min: {im.min():.2f}, max: {im.max():.2f}')
+            out = dataset[idx]
+            im = out[key].cpu().numpy().squeeze(-1)
+            ax.set_title(f'idx: {idx}, min: {im.min():.2f}, max: {im.max():.2f}\nlabel: {out["human_label"]}')
             ax.matshow(im, cmap='gray')
             ax.axis('off')
-            # ax.colorbar()
         fig.suptitle('Random contours')
         fig.tight_layout()
         plt.show()

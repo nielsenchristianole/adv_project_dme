@@ -3,7 +3,6 @@ from pathlib import Path
 import cv2
 import tqdm
 import numpy as np
-import netCDF4
 import geopandas as gpd
 import pandas as pd
 import shapely
