@@ -157,11 +157,16 @@ class ContinuousBernoulliWithDiscriminator(VaeLossWithDiscriminator):
 
     def _forward(self, inputs: torch.Tensor, reconstructions: torch.Tensor, batch: Optional[dict]=None) -> Tuple[torch.Tensor, torch.Tensor]:
 
-        shape = AutoencoderKL.get_input(batch, 'shape')
-
         dist = ContinuousBernoulli(logits=reconstructions.contiguous())
+
         nll = - dist.log_prob(inputs.contiguous())
-        nll *= shape.type_as(nll)
+        reconstructions = dist.mean.contiguous()
+
+        shape = AutoencoderKL.get_input(batch, 'shape').type_as(nll)
+
+        nll *= shape
+        reconstructions *= shape
+
         nll = torch.sum(nll, dim=[d for d in range(1, nll.dim())])
 
-        return nll, dist.probs.contiguous()
+        return nll, reconstructions

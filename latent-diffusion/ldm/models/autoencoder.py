@@ -427,7 +427,7 @@ class AutoencoderKL(pl.LightningModule):
         elif self.im_recon_mode == 'binary':
             x = (x > 0).type_as(x)
         elif self.im_recon_mode == 'continuous':
-            x = ContinuousBernoulli(logits=x).probs
+            x = ContinuousBernoulli(logits=x).mean
         
         if self.negative_1_to_1:
             return 2 * x - 1
