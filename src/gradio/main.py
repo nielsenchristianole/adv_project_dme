@@ -3,6 +3,7 @@ from typing import Literal, Optional, List
 import numpy as np
 import gradio as gr
 import shapely
+from src.gradio.mesh_map import heightmap_to_3d_mesh
 from src.gradio.demo_types import TOWN_TYPE, TOWN_TYPES, Town, RoadGraph
 from src.gradio.display_map import plot_map
 from src.gradio.gradio_utils import TownNameSampler
@@ -83,19 +84,31 @@ with gr.Blocks() as demo:
 
         # map column
         with gr.Column():
-            output_image = gr.Image(
-                value=plot_map(return_step='empty'),
-                label='Map',
-                interactive=False,
-                image_mode='RGB',
-                show_download_button=False)
-            with gr.Row():
-                gr.DownloadButton('Download PNG')
-                gr.DownloadButton('Download JSON')
+            with gr.Tab('Map'):
+                output_image = gr.Image(
+                    value=plot_map(return_step='empty'),
+                    label='Map',
+                    interactive=False,
+                    image_mode='RGB',
+                    show_download_button=False)
+                with gr.Row():
+                    gr.DownloadButton('Download PNG')
+                    gr.DownloadButton('Download JSON')
+                
+            with gr.Tab('3d Mesh'):
+                output_mesh_hm = gr.Model3D(
+                        value=None,
+                        interactive=True
+                    )
+                with gr.Row():
+                    generate_mesh_button = gr.Button('Generate 3D Mesh')
+            
+            
+            
 
-
-    # generation functions
-
+    # ---------------------------------------------------------------------------- #
+    #                             Generation functions                             #
+    # ---------------------------------------------------------------------------- #
     # shape generation
     @run_generate_shape_button.click(
         inputs=[
@@ -137,6 +150,17 @@ with gr.Blocks() as demo:
         chart = plot_map(shape, height_map, towns=None, roads=None, return_step='height_map')
 
         return height_map, chart
+
+    # 3D mesh generation
+    @generate_mesh_button.click(
+        inputs=[height_map_state],
+        outputs=[output_mesh_hm])
+    def generate_mesh(
+        height_map: np.ndarray
+    ) -> str:
+        output_path = 'assets/defaults/terrain_mesh.obj'
+        output_path = heightmap_to_3d_mesh(height_map, output_path=output_path)
+        return output_path
 
     # town generation
     @run_generate_town_button.click(

@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Literal
 
 import pandas as pd
 import numpy as np
@@ -45,27 +46,35 @@ def find_closest_folder(csv_path, query_longitude, query_latitude):
     return f'{closest_lat_idx}/{closest_lon_idx}'
 
 
-def show_plot(dataset_folder, path_folder, height_map=False):
+def show_plot(dataset_folder, path_folder, plot_mode: Literal['hm', 'hm_w_city', 'existing_png_plot'] = 'existing_png_plot'):
     data_path = Path(dataset_folder) / 'data' / Path(path_folder)
     plot_path = data_path / 'plot.png'
-    if plot_path.exists() and not height_map:
+    if plot_path.exists() and plot_mode == 'existing_png_plot':
         img = Image.open(plot_path)
-        plt.imshow(img)
+        plt.imshow(img, cmap='terrain')
         plt.axis('off')
-    else:
+    elif plot_mode == 'hm' or plot_mode == 'hm_w_city':
         height_map = np.load(data_path / 'height_map.npy')
-        plt.imshow(height_map)
+        plt.imshow(height_map, cmap='terrain')
+    else:
+        AssertionError(f'plot_mode: "{plot_mode}" not recognized')
+    
+    if plot_mode == 'hm_w_city':
+        city_path = data_path / 'cities.csv'
+        cities = pd.read_csv(city_path)
+        plt.scatter(cities['T_x'], cities['T_y'], color='red')
+        
     plt.show()
     
     
 if __name__ == '__main__':
     # Example usage:
     csv_file = 'data/undistorted_data_ortho_2/lonlat_id.csv'
-    query_lon, query_lat = 8.196084, 59.853582
+    query_lon, query_lat = 10.186778, 56.167756# 8.196084, 59.853582
 
   # Example longitude and latitude near the wrap-around boundary
     closest_folder = find_closest_folder(csv_file, query_lon, query_lat)
     print(f"The closest folder is: {closest_folder}")
     
     dataset_folder = 'data/undistorted_data_ortho_2'
-    show_plot(dataset_folder, closest_folder, height_map=False)
+    show_plot(dataset_folder, closest_folder)

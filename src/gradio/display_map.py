@@ -98,7 +98,7 @@ def plot_map(
         map_color = np.empty((*out_resolution, 3), dtype=np.uint8)
         for i in range(3):
             colormapped = cv2.applyColorMap((simple_height_map * (255 / max_height)).astype(np.uint8), TERRAIN_COLORMAP[:, i])
-            map_color[..., i] = colormapped[..., 0]
+            map_color[..., i] = colormapped
         map_color[sea_mask] = WATER_COLOR
 
         # draw contours on the map
@@ -160,7 +160,7 @@ if __name__ == '__main__':
 
     height_map = np.load('assets/defaults/height_map.npy')
     shape = list(np.load('assets/defaults/shape.npz').values())
-    full_chart = plot_map(shape, None, None, None, return_step='shape')
+    full_chart = plot_map(height_map=None, shape=shape, return_step='shape')
 
     plt.imshow(full_chart)
     plt.axis('off')
