@@ -2,13 +2,13 @@ model:
   base_learning_rate: 1.0e-05
   target: ldm.models.autoencoder.AutoencoderKL
   params:
-    im_recon_mode: continuous
+    im_recon_mode: binary
     monitor: val/rec_loss
-    embed_dim: 2
+    embed_dim: 1
     lossconfig:
-      target: ldm.modules.losses.custom_loses.ContinuousBernoulliWithDiscriminator
+      target: ldm.modules.losses.custom_loses.BernoulliWithDiscriminator
       params:
-        disc_start: 2751
+        disc_start: 3001
         kl_weight: 1.0e-06
         disc_weight: 0.05
         disc_in_channels: 1
@@ -16,11 +16,11 @@ model:
         perceptual_weight: 0.0
     ddconfig:
       double_z: true
-      z_channels: 2
+      z_channels: 1
       resolution: 128
       in_channels: 1
       out_ch: 1
-      ch: 96
+      ch: 32
       ch_mult:
       - 1
       - 2
@@ -32,19 +32,17 @@ model:
 data:
   target: main.DataModuleFromConfig
   params:
-    batch_size: 4
+    batch_size: 12
     wrap: false
     train:
-      target: height_dataset.HeightData
+      target: shape_dataset.ShapeData
       params:
-        path: '../data/height_contours/df_128/df.shp'
-        root_dir: '../'
+        path: '../data/contours/df_128/df.shp'
         im_size: 128
         mode: train
     validation:
-      target: height_dataset.HeightData
+      target: shape_dataset.ShapeData
       params:
-        path: '../data/height_contours/df_128/df.shp'
-        root_dir: '../'
+        path: '../data/contours/df_128/df.shp'
         im_size: 128
         mode: val
