@@ -7,25 +7,28 @@ import pandas as pd
 import numpy as np
 import tqdm
 
-import torchvision
 from torchvision import transforms as T
 from PIL import Image
 
-    
 import matplotlib.pyplot as plt
 
 class CityDataset(Dataset):
     
+    NORMALIZE_VARIANCE = 3000
+    
     def __init__(self,
-                 data_path : Path,
+                 data_path : str|Path,
                  min_cities : int = 2,
                  max_cities : int = 100,
                  img_size : int = 256,
                  cutout_overlap : int = 128,
                  smoothing : int = 20,
-                 verbose : bool = True):
+                 verbose : bool = True,
+                 data_split_seed : int = 42,
+                 val_split : float = 0.1,
+                 is_train : bool = True):
         
-        self.data_path = data_path
+        self.data_path = Path(data_path)
         
         self.min_cities = min_cities
         self.max_cities = max_cities
@@ -36,9 +39,14 @@ class CityDataset(Dataset):
         
         self.verbose = verbose
         
-        self.height_paths, self.city_paths = self._extract_city_and_height_paths()    
-        cache_file = self.data_path / "citydata_indexing_cache.json"
+        self.is_train = is_train
+        self.val_split = val_split
+        self.data_split_seed = data_split_seed
         
+        self.height_paths, self.city_paths = self._extract_city_and_height_paths()
+        suffix = "train" if is_train else "val"    
+        cache_file = self.data_path / f"citydata_indexing_cache_{suffix}.json"
+
         use_cache = True
         if cache_file.exists():
             with cache_file.open("r") as f:
@@ -61,6 +69,7 @@ class CityDataset(Dataset):
         else:
             use_cache = False
             
+            
         if not use_cache:
             self.extraction_info = self._compute_data_extraction()
             
@@ -72,8 +81,8 @@ class CityDataset(Dataset):
                            "extraction_info" : self.extraction_info}, f)
         
         if verbose:
-            print("[DATA INFO] Number of images: ", len(self.height_paths))
-            print("[DATA INFO] Number of datapoints: ", len(self.extraction_info))
+            print(f"[DATA INFO, {suffix}] Number of images: ", len(self.height_paths))
+            print(f"[DATA INFO, {suffix}] Number of datapoints: ", len(self.extraction_info))
         
     def __len__(self):
         
@@ -88,9 +97,9 @@ class CityDataset(Dataset):
         img = Image.fromarray(np.load(self.height_paths[i]))
         cities = pd.read_csv(self.city_paths[i])
         
-        img, city_img, heatmap = self._preprocess(img, cities, x, y)
+        img, heatmap = self._preprocess(img, cities, x, y)
         
-        return img, city_img, heatmap
+        return img, heatmap
     
     def _preprocess(self, 
                     img : Image,
@@ -105,7 +114,7 @@ class CityDataset(Dataset):
         
         cities = cities[(cities["T_x"] > x - diag_r) & (cities["T_x"] < x + diag_r) &
                         (cities["T_y"] > y - diag_r) & (cities["T_y"] < y + diag_r) &
-                        (cities["type"] != "hamlet") & (cities["type"] != "administrative")]
+                        (cities["type"] != "administrative")]
         cities = np.array([cities["T_x"] - (x - diag_r), cities["T_y"] - (y - diag_r)]).T
         
         rot_angle = np.random.randint(0, 360)
@@ -130,14 +139,14 @@ class CityDataset(Dataset):
         # center the cities
         cities = cities - (diag_r - half_w)
         
-        img = T.ToTensor()(img)
+        img = T.ToTensor()(img)/self.NORMALIZE_VARIANCE
         
-        # Apply mask
+        # Apply water mask
         water_mask = img < 0
         img[water_mask] = 0
         
-        city_img = np.zeros((1, self.img_size, self.img_size))
-        city_img[0, cities[:, 1].astype(int), cities[:, 0].astype(int)] = 1
+        # city_img = np.zeros((1, self.img_size, self.img_size))
+        # city_img[0, cities[:, 1].astype(int), cities[:, 0].astype(int)] = 1
         
         # Convert to heatmap
         heatmap = np.zeros((1, self.img_size, self.img_size))
@@ -150,7 +159,7 @@ class CityDataset(Dataset):
     
         heatmap /= np.sum(heatmap)
         heatmap = torch.tensor(heatmap).float()
-        return img, city_img, heatmap
+        return img, heatmap
     
     def _compute_data_extraction(self):
         """
@@ -166,7 +175,7 @@ class CityDataset(Dataset):
           - (path_idx, x, y) where x and y is the center in the original image
         """
         
-        assert self.height_paths, "No data found, call _extract_city_and_height_paths first"
+        assert self.height_paths, f"No data found at {self.data_path}, call _extract_city_and_height_paths first"
         
         extraction_info = []
         max_city_count = 0
@@ -187,7 +196,7 @@ class CityDataset(Dataset):
                     
                     city_extract = cities[(cities["T_x"] > x - half_w) & (cities["T_x"] < x + half_w) &
                                           (cities["T_y"] > y - half_w) & (cities["T_y"] < y + half_w) &
-                                          (cities["type"] != "hamlet") & (cities["type"] != "administrative")]
+                                          (cities["type"] != "administrative")]
                     
                     if len(city_extract) > max_city_count:
                         max_city_count = len(city_extract)
@@ -211,11 +220,16 @@ class CityDataset(Dataset):
         
         half_w = int(self.img_size / 2)
         
+        city_outside = cities[(cities["T_x"] < x - half_w) | (cities["T_x"] > x + half_w) |
+                                (cities["T_y"] < y - half_w) | (cities["T_y"] > y + half_w) |
+                                (cities["type"] == "hamlet") | (cities["type"] == "administrative")]
         city_extract = cities[(cities["T_x"] > x - half_w) & (cities["T_x"] < x + half_w) &
                               (cities["T_y"] > y - half_w) & (cities["T_y"] < y + half_w) &
                               (cities["type"] != "hamlet") & (cities["type"] != "administrative")]
                         
         plt.imshow(img)
+        plt.scatter(city_outside["T_x"],
+                    city_outside["T_y"], c="b")
         plt.scatter(city_extract["T_x"],
                     city_extract["T_y"], c="r")
         rect = plt.Rectangle((x - half_w, y - half_w), self.img_size, self.img_size, linewidth=1, edgecolor='r', facecolor='none')
@@ -256,6 +270,15 @@ class CityDataset(Dataset):
             height_paths.append(path)
             meta_paths.append(meta_path)
             
+        num_train_files = int(len(height_paths) * (1 - self.val_split))
+        np.random.seed(self.data_split_seed)
+        train_idx = np.random.choice(len(height_paths), num_train_files, replace=False)
+        val_idx = np.array([i for i in range(len(height_paths)) if i not in train_idx])
+        
+        idxs = train_idx if self.is_train else val_idx
+            
+        height_paths = [height_paths[i] for i in idxs]
+        city_paths = [city_paths[i] for i in idxs]
         return height_paths, city_paths
     
 

@@ -1,0 +1,64 @@
+seed: 42
+
+identifier:
+  name: train
+  time_format: "%m%d" # datatime.strftime format
+
+logging:
+  dir: CityGeneration/out/logs
+  log_every_n_steps: 1
+  log_gradients: # Log the mean and max gradient. Loops through all parameters so use with caution
+    use: false
+    step_type: epoch # batch, epoch
+    every_n: 1
+
+checkpointing:
+  dir: CityGeneration/out/checkpoints
+  save_top_k: 5
+  mode: min # min or max
+
+training:
+  accelerator: auto # cpu, gpu, tpu, hpu, mps, auto
+  epochs: 1000
+  precision: 32-true # 16-mixed, 16-true ect. See pytorch lightning docs
+  accumulate_grad_batches: 1
+  gradient_clipping:
+    use: false
+    value: 0.0
+    algorithm: "norm" # norm or value
+
+  loss_functions:
+    - target: src.losses.image_kd_divergence.ImageKLDivergence
+      weight: 1.0
+      params:
+        reduction: "mean"
+        log_target: false
+  optimizer:
+    optimizer: "adan" # adam, adan, sgd, etc.
+    weight_decay: 1e-4
+    lr_half_period: 2000
+    lr_mult_period: 2
+    lr_min: 1e-4
+    lr_max: 1e-2
+    lr_warmup_period: 1000
+    lr_warmup_max: 4e-2
+
+dataset:
+  target: src.dataset.city_dataloader.CityDataset
+  params:
+    data_path: data/undistorted_data_ortho_3
+    min_cities : 2
+    max_cities : 10000
+    img_size : 256
+    cutout_overlap : 128
+    smoothing : 20
+    val_split: 0.2
+    data_split_seed: 42
+    verbose : true
+
+dataloader:
+  batch_size: 2
+  persistent_workers: true
+  num_workers: -1 # if -1 then os.cpu_count()
+  val_worker_ratio: 0.1
+  pin_memory: false
