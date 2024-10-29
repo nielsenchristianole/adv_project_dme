@@ -163,8 +163,8 @@ class SinusoidalEmbedder(torch.nn.Module):
         """
         return scipy.stats.gamma.rvs(*(3.556653401460509, 0.009988185776161805, 0.03552099331432453), size=num_samples)
     
-    def sample(self, num_samples: int, return_scalers: bool=False) -> Union[torch.Tensor, Tuple[torch.Tensor, np.ndarray]]:
-        sizes = self.sample_sizes(num_samples)
+    def sample(self, num_samples: int, *, return_scalers: bool=False, conds: Optional[float]=None) -> Union[torch.Tensor, Tuple[torch.Tensor, np.ndarray]]:
+        sizes = self.sample_sizes(num_samples) if conds is None else np.full(num_samples, conds).astype(float)
         time = torch.tensor(sizes).float()
         conds = self.forward({self.key: time}).unsqueeze(1)
         if return_scalers:
@@ -186,34 +186,37 @@ if __name__ == '__main__':
     # quit()
 
     im_size = 128
-
     path = Path(f'./data/contours/df_{im_size}/df.shp')
-    dataset = ShapeData(path, im_size=im_size, mode='all', augment=False)
 
-    sizes = torch.empty(len(dataset))
-    for i in tqdm.trange(len(dataset)):
-        out = dataset[i]
-        sizes[i] = out['class_label'].item()
-    sizes = sizes.numpy()
+    # dataset = ShapeData(path, im_size=im_size, mode='all', augment=False)
 
-    import scipy.stats
-    moments = scipy.stats.gamma.fit(sizes)
+    # sizes = torch.empty(len(dataset))
+    # for i in tqdm.trange(len(dataset)):
+    #     out = dataset[i]
+    #     sizes[i] = out['class_label'].item()
+    # sizes = sizes.numpy()
 
-    xs = np.linspace(sizes.min(), sizes.max(), 1000)
-    ys = scipy.stats.gamma.pdf(xs, *moments)
+    # import scipy.stats
+    # # moments = scipy.stats.gamma.fit(sizes)
 
-    plt.hist(sizes, bins=50, density=True)
-    plt.plot(xs, ys)
+    # moments = (3.556653401460509, 0.009988185776161805, 0.03552099331432453)
+
+    # # xs = np.linspace(sizes.min(), sizes.max(), 1000)
+    # xs = np.linspace(0, 1, 1000)
+    # ys = scipy.stats.gamma.pdf(xs, *moments)
+
+    # plt.hist(sizes, bins=50, density=True)
+    # plt.plot(xs, ys)
+    # plt.show()
 
 
+    # quit()
 
-    quit()
 
-
-    # for mode in ['test', 'val', 'train']:
-    #     dataset = ShapeData(path, im_size=im_size, mode=mode)
-    #     print(f'{mode}: {len(dataset)}')
-    #     break
+    for mode in ['test', 'val', 'train']:
+        dataset = ShapeData(path, im_size=im_size, mode=mode)
+        print(f'{mode}: {len(dataset)}')
+        # break
 
     # while True:
     #     fig, axes = plt.subplots(2, 2, figsize=(10, 10))

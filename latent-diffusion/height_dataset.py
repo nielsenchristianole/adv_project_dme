@@ -163,7 +163,7 @@ if __name__ == '__main__':
     key = 'image'
 
     path = f'./data/height_contours/df_{im_size}/df.shp'
-    dataset = HeightData(path, im_size=im_size, mode='all')
+    # dataset = HeightData(path, im_size=im_size, mode='all')
 
     # data = list()
     # data_raw = list()
@@ -181,16 +181,16 @@ if __name__ == '__main__':
     # ax[0].hist(np.exp(-data))
     # plt.show()
 
-    for i in [487, 3968, 3969, 7524]:
-        fig, ax = plt.subplots(2)
-        ax = ax.flatten()
-        out = dataset.__getitem__(i)
-        im = out[key].cpu().numpy().squeeze(-1)
-        ax[0].set_title(f'idx: {i}, min: {im.min():.2f}, max: {im.max():.2f}\nlabel: {out["human_label"]}')
-        ax[0].matshow(im, cmap='gray')
-        ax[0].axis('off')
-        ax[1].matshow(out['height_map_unmasked'], cmap='gray')
-        plt.show()
+    # for i in [487, 3968, 3969, 7524]:
+    #     fig, ax = plt.subplots(2)
+    #     ax = ax.flatten()
+    #     out = dataset.__getitem__(i)
+    #     im = out[key].cpu().numpy().squeeze(-1)
+    #     ax[0].set_title(f'idx: {i}, min: {im.min():.2f}, max: {im.max():.2f}\nlabel: {out["human_label"]}')
+    #     ax[0].matshow(im, cmap='gray')
+    #     ax[0].axis('off')
+    #     ax[1].matshow(out['height_map_unmasked'], cmap='gray')
+    #     plt.show()
     # errors = list()
     # for angle in (pbar := tqdm.tqdm(np.linspace(0, 2 * np.pi, 10, endpoint=False), 'angle', leave=True)):
     #     for mirror in tqdm.tqdm([True, False], 'mirror', leave=False):
@@ -212,7 +212,8 @@ if __name__ == '__main__':
     for mode in ['test', 'val', 'train']:
         dataset = HeightData(path, im_size=im_size, mode=mode)
         print(f'{mode}: {len(dataset)}')
-        break
+        # break
+    quit()
 
     while True:
         fig, axes = plt.subplots(2, 2, figsize=(10, 10))
