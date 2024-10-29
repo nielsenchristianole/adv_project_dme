@@ -149,17 +149,17 @@ class CityDataset(Dataset):
         # city_img[0, cities[:, 1].astype(int), cities[:, 0].astype(int)] = 1
         
         # Convert to heatmap
-        heatmap = np.zeros((1, self.img_size, self.img_size))
+        heatmap = np.zeros((1, self.img_size, self.img_size)) + 1e-6
         
         for city in cities:
-            heatmap[0] += np.exp(-((np.arange(self.img_size) - city[0]) ** 2 + 
+            heat = np.exp(-((np.arange(self.img_size) - city[0]) ** 2 + 
                                    (np.arange(self.img_size)[:, None] - city[1]) ** 2) /
                                    (2 * self.smoothing ** 2)
                                 )
+            heat[water_mask[0]] = 0
+            heatmap += heat / heat.sum()
     
-        heatmap_sum = np.sum(heatmap)
-        if heatmap_sum > 0:
-            heatmap /= heatmap_sum
+        heatmap /= heatmap.sum()
             
         heatmap = torch.tensor(heatmap).float()
         return img, heatmap
@@ -301,10 +301,13 @@ if __name__ == "__main__":
 
     dataloader, dataset = get_city_dataloader(data_kwargs=config["dataset"]["params"])
     
-    for i, (img, heatmap) in enumerate(dataloader):
+    for i in range(len(dataset)):
         
-        fig, axs = plt.subplots(1, 2, figsize=(10, 5))
+        img, heatmap = dataset[i]
         
-        axs[0].imshow(heatmap[0].permute(1, 2, 0))
+        fig, axs = plt.subplots(1, 3, figsize=(10, 5))
+        
+        axs[0].imshow(img.permute(1, 2, 0))
+        axs[1].imshow(heatmap.permute(1, 2, 0))
         
         dataset._plot_datapoint(i)

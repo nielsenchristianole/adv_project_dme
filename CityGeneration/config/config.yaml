@@ -52,7 +52,7 @@ dataset:
     max_cities : 10000
     img_size : 128
     cutout_overlap : 64
-    smoothing : 10
+    smoothing : 5
     val_split: 0.2
     data_split_seed: 42
     verbose : true
