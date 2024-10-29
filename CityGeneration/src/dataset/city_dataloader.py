@@ -282,8 +282,8 @@ class CityDataset(Dataset):
         return height_paths, city_paths
     
 
-def get_city_dataloader(data_path, batch_size=32, shuffle=True, num_workers=4, data_kwargs={}):
-    dataset = CityDataset(data_path, **data_kwargs)
+def get_city_dataloader(batch_size=32, shuffle=True, num_workers=4, data_kwargs={}):
+    dataset = CityDataset(**data_kwargs)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
     return dataloader, dataset
 
@@ -293,20 +293,15 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
     import yaml
     
-    with open("src/city_gen/dataloader_config.yaml", "r") as f:
+    with open("CityGeneration/config/config.yaml", "r") as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
 
-    data_path = Path("data/undistorted_data_ortho_3")
-    dataloader, dataset = get_city_dataloader(data_path, data_kwargs=config)
+    dataloader, dataset = get_city_dataloader(data_kwargs=config["dataset"]["params"])
     
-    for img, city_map, heatmap in dataloader:
+    for i, (img, heatmap) in enumerate(dataloader):
         
-        batch_idx = 0
+        fig, axs = plt.subplots(1, 2, figsize=(10, 5))
         
-        fig, axs = plt.subplots(1, 2, figsize=(15, 5))
-        axs[0].imshow(img[batch_idx][0])
-        city_idx = city_map[batch_idx].nonzero()
-        axs[0].scatter(city_idx[:,2], city_idx[:,1], c="r")
-        axs[1].imshow(heatmap[batch_idx][0])
-
-        plt.show()
+        axs[0].imshow(heatmap[0].permute(1, 2, 0))
+        
+        dataset._plot_datapoint(i)
