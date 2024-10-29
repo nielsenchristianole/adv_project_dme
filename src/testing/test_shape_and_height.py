@@ -4,12 +4,11 @@ import tabulate
 import matplotlib.pyplot as plt
 from pathlib import Path
 
-from src.testing.utils.distance_utils import L2, iou_dist, dice_dist, calculate_stats, uniform_to_height
+from src.testing.utils.distance_utils import L2, iou_dist, dice_dist, calculate_stats, uniform_to_height, load_data
 
 
 sample_dir = './data/samples'
 out_dir = './results/shapes_and_heights'
-im_size = 128
 table_kwargs = dict(
     tablefmt='latex',
     floatfmt='.3f',
@@ -21,14 +20,6 @@ sample_dir = Path(sample_dir)
 out_dir = Path(out_dir)
 out_dir.mkdir(exist_ok=True, parents=True)
 pbar = tqdm.tqdm(total=10)
-
-
-def load_data(_dir: Path, dtype=float) -> np.ndarray:
-    paths = sorted(list(_dir.iterdir()))
-    arr = np.empty((len(paths), im_size, im_size), dtype=dtype)
-    for i, sample_path in enumerate(paths):
-        arr[i] = np.load(sample_path).astype(dtype)
-    return arr
 
 
 # load samples

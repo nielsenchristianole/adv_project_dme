@@ -1,6 +1,10 @@
 from typing import Callable, Tuple
 
 import numpy as np
+from pathlib import Path
+
+
+IM_SIZE = 128
 
 
 def L2(
@@ -61,15 +65,15 @@ def calculate_stats(samples: np.ndarray, targets: np.ndarray, dist_func: Callabl
     returns mmd, coverage, one_nnA
     """
 
-    num_tests = len(targets)
-    assert len(samples) >= 1 + num_tests
+    num_target = len(targets)
+    assert len(samples) >= 1 + num_target
 
-    train_test_shape_dist = dist_matrix(samples, targets, dist_func)
-    train_train_shape_dist = dist_matrix(samples, samples, dist_func)
+    sample_target_dist = dist_matrix(samples, targets, dist_func)
+    sample_sample_dist = dist_matrix(samples, samples, dist_func)
 
-    mmd = train_test_shape_dist.min(axis=1)[:num_tests].mean()
-    coverage = len(np.unique(train_test_shape_dist.argmin(axis=1)[:num_tests])) / num_tests
-    one_nnA = (train_test_shape_dist.min(axis=1)[:num_tests +1] < remove_diag(train_train_shape_dist[:num_tests + 1, :num_tests + 1]).min(axis=1)).mean()
+    mmd = sample_target_dist.min(axis=1)[:num_target].mean()
+    coverage = len(np.unique(sample_target_dist.argmin(axis=1)[:num_target])) / num_target
+    one_nnA = (sample_target_dist.min(axis=1)[:num_target + 1] < remove_diag(sample_sample_dist[:num_target + 1, :num_target + 1]).min(axis=1)).mean()
 
     return mmd, coverage, one_nnA
 
@@ -81,3 +85,11 @@ def uniform_to_height(u: np.ndarray, *, mean: float=300.0) -> np.ndarray:
     height ~ Exp(mean)
     """
     return - mean * np.log(1 - u)
+
+
+def load_data(_dir: Path, dtype=float, im_size: int=IM_SIZE) -> np.ndarray:
+    paths = sorted(list(_dir.iterdir()))
+    arr = np.empty((len(paths), im_size, im_size), dtype=dtype)
+    for i, sample_path in enumerate(paths):
+        arr[i] = np.load(sample_path).astype(dtype)
+    return arr
