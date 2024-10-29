@@ -20,8 +20,8 @@ checkpointing:
 training:
   accelerator: auto # cpu, gpu, tpu, hpu, mps, auto
   epochs: 1000
-  precision: 32-true # 16-mixed, 16-true ect. See pytorch lightning docs
-  accumulate_grad_batches: 1
+  precision: 16-mixed # 16-mixed, 16-true ect. See pytorch lightning docs
+  accumulate_grad_batches: 8
   gradient_clipping:
     use: false
     value: 0.0
@@ -31,8 +31,9 @@ training:
     - target: src.losses.image_kd_divergence.ImageKLDivergence
       weight: 1.0
       params:
-        reduction: "mean"
+        reduction: "batchmean"
         log_target: false
+        
   optimizer:
     optimizer: "adan" # adam, adan, sgd, etc.
     weight_decay: 1e-4
@@ -49,16 +50,16 @@ dataset:
     data_path: data/undistorted_data_ortho_3
     min_cities : 2
     max_cities : 10000
-    img_size : 256
-    cutout_overlap : 128
-    smoothing : 20
+    img_size : 128
+    cutout_overlap : 64
+    smoothing : 10
     val_split: 0.2
     data_split_seed: 42
     verbose : true
 
 dataloader:
-  batch_size: 2
+  batch_size: 4
   persistent_workers: true
   num_workers: -1 # if -1 then os.cpu_count()
   val_worker_ratio: 0.1
-  pin_memory: false
+  pin_memory: true

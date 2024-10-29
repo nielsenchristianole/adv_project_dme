@@ -132,30 +132,26 @@ class TrainModule(L.LightningModule):
             name = func.__class__.__name__
             self.log(f"{subdir}/{name}", loss, on_epoch=True, on_step=False)
 
-    def _log_predictions(self, batch, outputs, prefix : str):
+    def _log_predictions(self, labels, outputs, prefix : str):
         """
         Implement logging for predictions
-        """
+        """        
         
-        labels = batch[1]
+        fig, ax = plt.subplots(1, 1, figsize=(5, 5))
         
-        fig, axs = plt.subplots(1, 5, figsize=(10, 5))
-        
-        for i, ax in enumerate(axs):
-            ax.imshow(outputs[i].detach().cpu().numpy().transpose(1, 2, 0))
-            ax.set_title(f"Prediction {i}")
-            ax.axis("off")
+        ax.imshow(outputs[0].detach().cpu().numpy().transpose(1, 2, 0))
+        ax.set_title(f"Prediction")
+        ax.axis("off")
         
         self.logger.experiment.add_figure(f"{prefix}/predictions", fig)
         
         plt.close(fig)
         
-        fig, axs = plt.subplots(1, 5, figsize=(10, 5))
-        
-        for i, ax in enumerate(axs):
-            ax.imshow(labels[i].detach().cpu().numpy().transpose(1, 2, 0))
-            ax.set_title(f"Label {i}")
-            ax.axis("off")
+        fig, ax = plt.subplots(1, 1, figsize=(5, 5))
+    
+        ax.imshow(labels[0].detach().cpu().numpy().transpose(1, 2, 0))
+        ax.set_title(f"Label")
+        ax.axis("off")
             
         self.logger.experiment.add_figure(f"{prefix}/labels", fig)
         

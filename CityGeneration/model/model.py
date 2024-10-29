@@ -683,8 +683,9 @@ class UNetModel(nn.Module):
         self.out = nn.Sequential(
             normalization(ch),
             nn.SiLU(),
-            zero_module(conv_nd(dims, model_channels, out_channels, 3, padding=1)),
+            conv_nd(dims, model_channels, out_channels, 3, padding=1)
         )
+        
         if self.predict_codebook_ids:
             self.id_predictor = nn.Sequential(
             normalization(ch),
@@ -744,7 +745,10 @@ class UNetModel(nn.Module):
         if self.predict_codebook_ids:
             return self.id_predictor(h)
         else:
-            return self.out(h)
+            
+            res = self.out(h)
+            
+            return res
 
 
 class EncoderUNetModel(nn.Module):
