@@ -1,8 +1,10 @@
 import os
 from pathlib import Path
-from typing import Optional, Literal, Union
+from typing import Optional, Literal, Union, Tuple
 
 import cv2
+import tqdm
+import scipy.stats
 import numpy as np
 import geopandas as gpd
 import matplotlib.pyplot as plt
@@ -22,12 +24,13 @@ class ShapeData(Dataset):
         path: os.PathLike,
         im_size: int=256,
         *,
-        mode: Literal['train', 'val', 'test']='train',
+        mode: Literal['train', 'val', 'test', 'all']='train',
         val_split: float=0.1,
         test_split: float=0.1,
         dtype: Optional[torch.dtype]=None,
         pix2m=2000,
-        seed: int=42069
+        seed: int=42069,
+        augment: Optional[bool]=True
     ) -> None:
         super().__init__()
 
@@ -43,7 +46,6 @@ class ShapeData(Dataset):
         df = df[mask]
 
         # split data
-        assert mode in ['train', 'val', 'test'], 'mode must be one of "train", "val", "test"'
         assert val_split + test_split < 1, 'val_split + test_split must be less than 1'
 
         generator = np.random.default_rng(seed)
@@ -60,6 +62,10 @@ class ShapeData(Dataset):
             df = df.loc[val_datapoints]
         elif mode == 'test':
             df = df.loc[test_datapoints]
+        elif mode == 'all':
+            pass
+        else:
+            raise ValueError(f'Unknown mode: {mode}')
 
         # get contours
         centers = np.array([list(c.coords) for c in df.minimum_bounding_circle().centroid]).squeeze(1)
@@ -67,6 +73,7 @@ class ShapeData(Dataset):
         self.contours = [(contour - center) / pix2m for contour, center in zip(contours, centers)]
 
         # set attributes
+        self.augment = augment
         self.im_size = im_size
         self.dtype = dtype if dtype is not None else torch.float32
 
@@ -103,12 +110,15 @@ class ShapeData(Dataset):
         cv2.fillPoly(im, pts=[(points + self.im_size / 2)[:, None].astype(int)], color=255)
         return torch.tensor(im[None], dtype=self.dtype)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx) -> dict:
         contour = self.contours[idx]
 
-        if np.random.rand() > 0.5:
-            contour = self.mirror(contour)
-        angle = np.random.uniform(0, 2 * np.pi)
+        if self.augment:
+            if np.random.rand() > 0.5:
+                contour = self.mirror(contour)
+            angle = np.random.uniform(0, 2 * np.pi)
+        else:
+            angle = 0.
         contour = self.rotate(contour, angle)
         image = self.transform(self.get_im(contour)).squeeze(0).unsqueeze(-1)
         size = (image > 0).float().mean()[None]
@@ -146,6 +156,21 @@ class SinusoidalEmbedder(torch.nn.Module):
 
         return timestep_embedding(self.scale * time, self.emb_dim, max_period=self.max_period)
 
+    @staticmethod
+    def sample_sizes(num_samples: int) -> np.ndarray:
+        """
+        This dist has been fittet to the shape data
+        """
+        return scipy.stats.gamma.rvs(*(3.556653401460509, 0.009988185776161805, 0.03552099331432453), size=num_samples)
+    
+    def sample(self, num_samples: int, return_scalers: bool=False) -> Union[torch.Tensor, Tuple[torch.Tensor, np.ndarray]]:
+        sizes = self.sample_sizes(num_samples)
+        time = torch.tensor(sizes).float()
+        conds = self.forward({self.key: time}).unsqueeze(1)
+        if return_scalers:
+            return conds, sizes
+        return conds
+
     def sanity_check(self, num_samples: Optional[int]=None) -> None:
         num_samples = num_samples if num_samples is not None else 2 * self.emb_dim
         time = torch.linspace(0, self.max_period, num_samples)[:, None]
@@ -157,32 +182,53 @@ class SinusoidalEmbedder(torch.nn.Module):
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
 
-    SinusoidalEmbedder('time', max_period=80.0).sanity_check()
-    quit()
+    # SinusoidalEmbedder('time', max_period=80.0).sanity_check()
+    # quit()
 
     im_size = 128
 
     path = Path(f'./data/contours/df_{im_size}/df.shp')
+    dataset = ShapeData(path, im_size=im_size, mode='all', augment=False)
 
-    for mode in ['test', 'val', 'train']:
-        dataset = ShapeData(path, im_size=im_size, mode=mode)
-        print(f'{mode}: {len(dataset)}')
-        break
+    sizes = torch.empty(len(dataset))
+    for i in tqdm.trange(len(dataset)):
+        out = dataset[i]
+        sizes[i] = out['class_label'].item()
+    sizes = sizes.numpy()
 
-    while True:
-        fig, axes = plt.subplots(2, 2, figsize=(10, 10))
-        idxs = np.random.choice(len(dataset), replace=False, size=4)
-        for idx, ax in zip(idxs, axes.flatten()):
-            ax.imshow(dataset[idx]['image'].cpu().numpy().squeeze(-1), cmap='gray')
-            ax.axis('off')
-        fig.suptitle('Random contours')
-        fig.tight_layout()
-        plt.show()
+    import scipy.stats
+    moments = scipy.stats.gamma.fit(sizes)
 
-    fig, axes = plt.subplots(8, 8, figsize=(40, 40))
-    idx = np.random.choice(len(dataset))
-    for ax in axes.flatten():
-        ax.imshow(dataset[idx]['image'].cpu().numpy().squeeze(-1), cmap='gray')
-        ax.axis('off')
-    fig.suptitle('Random contour transforms')
-    plt.show()
+    xs = np.linspace(sizes.min(), sizes.max(), 1000)
+    ys = scipy.stats.gamma.pdf(xs, *moments)
+
+    plt.hist(sizes, bins=50, density=True)
+    plt.plot(xs, ys)
+
+
+
+    quit()
+
+
+    # for mode in ['test', 'val', 'train']:
+    #     dataset = ShapeData(path, im_size=im_size, mode=mode)
+    #     print(f'{mode}: {len(dataset)}')
+    #     break
+
+    # while True:
+    #     fig, axes = plt.subplots(2, 2, figsize=(10, 10))
+    #     idxs = np.random.choice(len(dataset), replace=False, size=4)
+    #     for idx, ax in zip(idxs, axes.flatten()):
+    #         ax.imshow(dataset[idx]['image'].cpu().numpy().squeeze(-1), cmap='gray')
+    #         ax.axis('off')
+    #     fig.suptitle('Random contours')
+    #     fig.tight_layout()
+    #     plt.show()
+
+    # fig, axes = plt.subplots(8, 8, figsize=(40, 40))
+    # idx = np.random.choice(len(dataset))
+    # for ax in axes.flatten():
+    #     ax.imshow(dataset[idx]['image'].cpu().numpy().squeeze(-1), cmap='gray')
+    #     ax.axis('off')
+    # fig.suptitle('Random contour transforms')
+    # plt.show()

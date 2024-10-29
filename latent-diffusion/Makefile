@@ -24,6 +24,9 @@ resume-ae:
 	python3 main.py -b ./models/first_stage_models/height_model_small.yaml --train --devices gpus --auto_select_gpus --accelerator gpu --gpus "0," --accumulate_grad_batches 6 --resume_from_checkpoint ./logs/2024-10-24T13-17-49_height_model_small/checkpoints/epoch=000011.ckpt
 
 
+cuda:
+	python -c "import torch; print('CUDA is available' if torch.cuda.is_available() else 'CUDA is not available')"
+
 # python3 main.py -b ./models/first_stage_models/shape_model_small.yaml --train --devices gpus --auto_select_gpus --accelerator gpu --gpus "0," --accumulate_grad_batches 2 --resume_from_checkpoint ./logs/2024-10-21T13-48-06_shape_model_small/checkpoints/last.ckpt
 
 
@@ -45,3 +48,5 @@ host-logs:
 
 
 # python3 main.py -b ./models/ldm/height-ldm-small.yaml --train --devices gpus --auto_select_gpus --accelerator gpu --gpus "0," --accumulate_grad_batches 2 --resume_from_checkpoint ./logs/2024-10-24T16-53-08_height-ldm-small/checkpoints/last.ckpt 
+
+# python3 main.py -b ./models/ldm/height-ldm-small.yaml --train --devices gpus --auto_select_gpus --accelerator gpu --gpus "0," --accumulate_grad_batches 2 --resume_from_checkpoint ./logs/2024-10-28T22-11-39_height-ldm-small/checkpoints/epoch\=000136.ckpt

@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Literal, Optional
 
 import torch
 from torch.distributions import ContinuousBernoulli
@@ -421,13 +421,15 @@ class AutoencoderKL(pl.LightningModule):
         log["inputs"] = 2 * x - 1
         return log
     
-    def reconstruction_to_image(self, x):
+    def reconstruction_to_image(self, x, *, shape_cond: Optional[torch.Tensor]=None):
         if self.im_recon_mode == 'idenity':
             return x
         elif self.im_recon_mode == 'binary':
             x = (x > 0).type_as(x)
         elif self.im_recon_mode == 'continuous':
             x = ContinuousBernoulli(logits=x).mean
+            if shape_cond is not None:
+                x *= shape_cond.type_as(x)
         
         if self.negative_1_to_1:
             return 2 * x - 1
