@@ -157,7 +157,10 @@ class CityDataset(Dataset):
                                    (2 * self.smoothing ** 2)
                                 )
     
-        heatmap /= np.sum(heatmap)
+        heatmap_sum = np.sum(heatmap)
+        if heatmap_sum > 0:
+            heatmap /= heatmap_sum
+            
         heatmap = torch.tensor(heatmap).float()
         return img, heatmap
     

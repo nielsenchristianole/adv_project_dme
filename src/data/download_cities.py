@@ -70,5 +70,5 @@ def convert_to_pandas():
     df.to_csv("data/cities.csv", index=False)
 
 if __name__ == "__main__":
-    # get_and_download_data()
+    get_and_download_data()
     convert_to_pandas()

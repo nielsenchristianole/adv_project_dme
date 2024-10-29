@@ -9,3 +9,4 @@ tensorboard
 
 einops
 omegaconf
+matplotlib

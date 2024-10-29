@@ -3,7 +3,7 @@
 from torch import nn
 
 class ImageKLDivergence(nn.Module):
-    def __init__(self, reduction = "mean", log_target = False, **kwargs):
+    def __init__(self, reduction = "batchmean", log_target = False, **kwargs):
         """
         KL divergence loss for image data of shape (B, C, H, W).
         See: https://pytorch.org/docs/stable/generated/torch.nn.KLDivLoss.html for more infor.

@@ -3,6 +3,7 @@ import datetime
 import argparse
 
 import lightning as L
+import torch
 from torch import nn
 from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
 from lightning.pytorch.loggers import TensorBoardLogger
@@ -73,8 +74,11 @@ def train(params : NameSpace, model_params : NameSpace) -> None:
     logger = TensorBoardLogger(Path(params.logging.dir),
                                name=identifier)
     
-    save_config(params, logger.log_dir / "config.yaml")
-    save_config(model_params, logger.log_dir / "model_config.yaml")
+    if not Path(logger.log_dir).exists():
+        Path(logger.log_dir).mkdir(parents=True)
+    
+    save_config(params, Path(logger.log_dir) / "config.yaml")
+    save_config(model_params, Path(logger.log_dir) / "model_config.yaml")
     
     # Define the callbacks
     lr_monitor = LearningRateMonitor(logging_interval='step')
@@ -115,6 +119,7 @@ def train(params : NameSpace, model_params : NameSpace) -> None:
 
 
 if __name__ == "__main__":
+    torch.set_float32_matmul_precision('medium')
 
     parser = argparse.ArgumentParser(description="Train the resnet model on the ear dataset.")
     parser.add_argument('--config', type=str,
