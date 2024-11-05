@@ -2,10 +2,11 @@
 import argparse
 import yaml
 
-from src.utils.utils import dict_to_namespace, get_model, get_wrapped_model
+from CityGeneration.src.utils.utils import dict_to_namespace, get_model, get_wrapped_model
+from CityGeneration.src.modules.train_module import TrainModule
+
 from types import SimpleNamespace as NameSpace
 
-from src.modules.train_module import TrainModule
 
 def get_inference_model(ckpt_path : str,
                         params : NameSpace,

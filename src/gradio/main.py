@@ -178,6 +178,7 @@ with gr.Blocks() as demo:
             towns_state,
             town_name_sampler,
             output_image])
+    
     def generate_town(
         shape: Optional[shapely.MultiPolygon],
         height_map: Optional[np.ndarray],

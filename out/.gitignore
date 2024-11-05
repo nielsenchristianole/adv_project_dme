@@ -1,2 +1,6 @@
+
 *
 !*.gitignore
+!city_gen/
+!city_gen/*
+city_gen/*.ckpt

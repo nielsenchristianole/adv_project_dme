@@ -4,7 +4,7 @@ from torch import nn
 import numpy as np
 import torch
 
-from src.utils.image_utils import crop_to_square, resize
+from CityGeneration.src.utils.image_utils import crop_to_square, resize
 from torchvision import transforms as T
 
 class InferenceModel(nn.Module):

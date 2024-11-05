@@ -2,7 +2,7 @@ import numpy as np
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C
 
-from src.dataset.city_dataloader import get_city_dataloader
+from CityGeneration.src.dataset.city_dataloader import get_city_dataloader
 
 class ConditionalSampler:
     
@@ -12,6 +12,9 @@ class ConditionalSampler:
         
         self.prior_probs = prior_probs
         
+        self.reset()
+        
+    def reset(self):
         self.X_sampled = np.empty((1, 0))
         self.y_sampled = np.empty((1, 0))
         
@@ -90,6 +93,7 @@ if __name__ == "__main__":
         sampler = ConditionalSampler(gp, 
                                      heatmap[0].numpy(),
                                      repel = 0.5)
+        
         
         sampler.sample(10)
         

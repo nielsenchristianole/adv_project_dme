@@ -23,7 +23,7 @@ Homepage = "https://github.com/nielsenchristianole/adv_project_dme"
 Issues = "https://github.com/nielsenchristianole/adv_project_dme/issues"
 
 [tool.setuptools]
-packages = ["src"]
+packages = ["src", "CityGeneration"]
 
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements.txt"]}
