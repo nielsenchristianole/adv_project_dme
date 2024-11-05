@@ -4,30 +4,26 @@ import argparse
 
 import lightning as L
 import torch
-from torch import nn
 from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
 from lightning.pytorch.loggers import TensorBoardLogger
 
 from src.modules.train_module import TrainModule
 from src.modules.data_module import DataModule
-from src.utils.misc import dict_to_namespace
+
 from src.callbacks.gradient_callback import GradientLoggerCallback
+from src.callbacks.checkpoint_callback import EveryNEpochsCallback
+
+from src.utils.utils import dict_to_namespace, namespace_to_dict, import_target, get_model
 
 import yaml
-import importlib
 from pathlib import Path
+
+import matplotlib
+matplotlib.use('Agg')
 
 from types import SimpleNamespace as NameSpace
 
-def import_target(target : str) -> any:
-    try:
-        module_name, class_name = target.rsplit('.', 1)
-        module = importlib.import_module(module_name)
-        return getattr(module, class_name)
-    except:
-        raise ImportError(f"Could not import target: {target}")
-    
-def get_loss_functions(params : NameSpace) -> tuple[list[nn.Module], list[float]]:
+def get_loss_functions(params : NameSpace):# -> tuple[list[nn.Module], list[float]]:
 
     weights = []
     functions = []
@@ -38,13 +34,10 @@ def get_loss_functions(params : NameSpace) -> tuple[list[nn.Module], list[float]
         
     return functions, weights
 
-def get_model(model_params : NameSpace) -> nn.Module:
-    model = import_target(model_params.target)
-    return model(**vars(model_params.params))
-
-def save_config(params : NameSpace, path : str) -> None:
+def save_config(params_dict : dict, path : str) -> None:
     with open(path, 'w') as f:
-        yaml.dump(vars(params), f)
+        yaml.dump(params_dict,
+                  f)
 
 def train(params : NameSpace, model_params : NameSpace) -> None:
     
@@ -64,6 +57,7 @@ def train(params : NameSpace, model_params : NameSpace) -> None:
     train_module = TrainModule(model = model,
                                loss_functions = loss_functions,
                                loss_weights = loss_weights,
+                               logging_params= params.logging,
                                optimizer_params = params.training.optimizer)
     print("[STATUS] Training module created without errors.")
     
@@ -77,20 +71,22 @@ def train(params : NameSpace, model_params : NameSpace) -> None:
     if not Path(logger.log_dir).exists():
         Path(logger.log_dir).mkdir(parents=True)
     
-    save_config(params, Path(logger.log_dir) / "config.yaml")
-    save_config(model_params, Path(logger.log_dir) / "model_config.yaml")
+    save_config(namespace_to_dict(params), Path(logger.log_dir) / "config.yaml")
+    save_config(namespace_to_dict(model_params), Path(logger.log_dir) / "model_config.yaml")
     
     # Define the callbacks
     lr_monitor = LearningRateMonitor(logging_interval='step')
-    checkpoint_callback = ModelCheckpoint(
-        monitor='val/loss', 
-        dirpath=params.checkpointing.dir,
-        filename=identifier,
-        save_top_k=params.checkpointing.save_top_k,
-        mode=params.checkpointing.mode,
-    )
+    # val_loss_checkpointing = ModelCheckpoint(
+    #     monitor='val/loss', 
+    #     dirpath=logger.log_dir,
+    #     filename=identifier,
+    #     save_top_k=params.checkpointing.save_top_k,
+    #     mode=params.checkpointing.mode,
+    # )
+    every_n_epoch_checkpointing = EveryNEpochsCallback(logger.log_dir,
+                                                       every_n_epochs = params.checkpointing.every_n_epochs)
     
-    callbacks = [lr_monitor, checkpoint_callback]
+    callbacks = [lr_monitor, every_n_epoch_checkpointing]
     
     if params.logging.log_gradients.use:
         gradient_callback = GradientLoggerCallback(log_every_n=params.logging.log_gradients.every_n,
@@ -119,9 +115,9 @@ def train(params : NameSpace, model_params : NameSpace) -> None:
 
 
 if __name__ == "__main__":
-    torch.set_float32_matmul_precision('medium')
+    torch.set_float32_matmul_precision('high')
 
-    parser = argparse.ArgumentParser(description="Train the resnet model on the ear dataset.")
+    parser = argparse.ArgumentParser(description="Train a model on a dataset.")
     parser.add_argument('--config', type=str,
                         default="CityGeneration/config/config.yaml",
                         help='Path to the configuration file.')

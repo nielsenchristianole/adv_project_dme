@@ -10,3 +10,6 @@ tensorboard
 einops
 omegaconf
 matplotlib
+pandas
+
+sklearn

@@ -686,12 +686,16 @@ class UNetModel(nn.Module):
             conv_nd(dims, model_channels, out_channels, 3, padding=1)
         )
         
+        self.log_softmax = nn.LogSoftmax(dim=-1)
+        
         if self.predict_codebook_ids:
             self.id_predictor = nn.Sequential(
             normalization(ch),
             conv_nd(dims, model_channels, n_embed, 1),
             #nn.LogSoftmax(dim=1)  # change to cross_entropy and produce non-normalized logits
         )
+            
+        
 
     def convert_to_fp16(self):
         """
@@ -746,9 +750,11 @@ class UNetModel(nn.Module):
             return self.id_predictor(h)
         else:
             
-            res = self.out(h)
+            out = self.out(h)
+            out_flat = out.view(out.shape[0], 1, -1)
+            out_probs = self.log_softmax(out_flat)
             
-            return res
+            return out_probs.view(out.shape[0], 1, out.shape[2], out.shape[3])
 
 
 class EncoderUNetModel(nn.Module):

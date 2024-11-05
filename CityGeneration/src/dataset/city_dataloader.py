@@ -10,14 +10,13 @@ import tqdm
 from torchvision import transforms as T
 from PIL import Image
 
-import matplotlib.pyplot as plt
-
 class CityDataset(Dataset):
     
-    NORMALIZE_VARIANCE = 3000
+    NORMALIZE_VARIANCE = 500
     
     def __init__(self,
-                 data_path : str|Path,
+                 unprocessed_data_path,# : str|Path,
+                 processed_data_path,#: str|Path,
                  min_cities : int = 2,
                  max_cities : int = 100,
                  img_size : int = 256,
@@ -25,10 +24,12 @@ class CityDataset(Dataset):
                  smoothing : int = 20,
                  verbose : bool = True,
                  data_split_seed : int = 42,
+                 max_epoch_length : int = 10000,
                  val_split : float = 0.1,
                  is_train : bool = True):
         
-        self.data_path = Path(data_path)
+        self.unprocessed_data_path = Path(unprocessed_data_path)
+        self.processed_data_path = Path(processed_data_path)
         
         self.min_cities = min_cities
         self.max_cities = max_cities
@@ -42,129 +43,137 @@ class CityDataset(Dataset):
         self.is_train = is_train
         self.val_split = val_split
         self.data_split_seed = data_split_seed
-        
-        self.height_paths, self.city_paths = self._extract_city_and_height_paths()
-        suffix = "train" if is_train else "val"    
-        cache_file = self.data_path / f"citydata_indexing_cache_{suffix}.json"
 
-        use_cache = True
-        if cache_file.exists():
-            with cache_file.open("r") as f:
-                cache_data = json.load(f)
+        self.max_epoch_length = max_epoch_length
+        
+        suffix = "train" if is_train else "val"    
+        self.split_file = self.processed_data_path / f"citydata_split_info.json"
+
+        use_existing = True
+        if self.split_file.exists():
+            with self.split_file.open("r") as f:
+                split_info = json.load(f)
                 
-                min_cities = cache_data["min_cities"]
-                max_cities = cache_data["max_cities"]
-                cutout_overlap = cache_data["cutout_overlap"]
-                img_size = cache_data["img_size"]
+                min_cities = split_info["min_cities"]
+                max_cities = split_info["max_cities"]
+                cutout_overlap = split_info["cutout_overlap"]
+                img_size = split_info["img_size"]
+                smoothing = split_info["smoothing"]
                 
                 if min_cities != self.min_cities or \
                    max_cities != self.max_cities or \
                    cutout_overlap != self.cutout_overlap or \
-                   img_size != self.img_size:
+                   img_size != self.img_size or \
+                   smoothing != self.smoothing:
                     
                     print("[STATUS] Cache data does not match current data settings. Recomputing data extraction")
-                    use_cache = False
+                    use_existing = False
                 else:
-                    self.extraction_info = cache_data["extraction_info"]
+                    use_existing = True
         else:
-            use_cache = False
+            use_existing = False
             
+        if not use_existing:
             
-        if not use_cache:
-            self.extraction_info = self._compute_data_extraction()
+        
+            self.processed_data_path.mkdir(parents=True, exist_ok=True)
+            (self.processed_data_path / "train").mkdir(parents=True, exist_ok=True)
+            (self.processed_data_path / "val").mkdir(parents=True, exist_ok=True)
             
-            with cache_file.open("w") as f:
+            save_path_train, save_path_val = self._preprocess_and_save_data()
+            
+            with self.split_file.open("w") as f:
                 json.dump({"min_cities" : self.min_cities,
                            "max_cities" : self.max_cities,
                            "img_size" : self.img_size,
+                           "smoothing" : self.smoothing,
                            "cutout_overlap" : self.cutout_overlap,
-                           "extraction_info" : self.extraction_info}, f)
+                           "paths_train" : str(save_path_train), 
+                           "paths_val" : str(save_path_val)}, f)
+                
+        self._load_data_info()
         
         if verbose:
-            print(f"[DATA INFO, {suffix}] Number of images: ", len(self.height_paths))
-            print(f"[DATA INFO, {suffix}] Number of datapoints: ", len(self.extraction_info))
+            print(f"[DATA INFO, {suffix}] Number of datapoints: ", len(self.height_paths))
         
     def __len__(self):
-        
-        assert len(self.height_paths) == len(self.city_paths), "The number of images and cities should be the same"
-        
-        return len(self.extraction_info)
+    
+        # return len(self.height_paths)
+        return min(len(self.height_paths), self.max_epoch_length)
 
     def __getitem__(self, idx : int):
         
-        i, x, y = self.extraction_info[idx]
+        height = np.load(self.height_paths[idx])
+        heatmap = np.load(self.heatmap_paths[idx])
         
-        img = Image.fromarray(np.load(self.height_paths[i]))
-        cities = pd.read_csv(self.city_paths[i])
+        height, heatmap = self._prepare(height, heatmap)    
         
-        img, heatmap = self._preprocess(img, cities, x, y)
-        
-        return img, heatmap
+        return height, heatmap
     
-    def _preprocess(self, 
-                    img : Image,
-                    cities : pd.DataFrame,
-                    x : int,
-                    y : int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def _prepare(self, img : np.ndarray, heatmap : np.ndarray):
         
         diag_r = int(np.sqrt(2) * (self.img_size / 2))
-    
-        # Extract 2x diag_r
-        img = img.crop((x - diag_r, y - diag_r, x + diag_r, y + diag_r))
         
-        cities = cities[(cities["T_x"] > x - diag_r) & (cities["T_x"] < x + diag_r) &
-                        (cities["T_y"] > y - diag_r) & (cities["T_y"] < y + diag_r) &
-                        (cities["type"] != "administrative")]
-        cities = np.array([cities["T_x"] - (x - diag_r), cities["T_y"] - (y - diag_r)]).T
         
-        rot_angle = np.random.randint(0, 360)
+        img = Image.fromarray(img)
+        heatmap = Image.fromarray(heatmap)
         
-        # Rotate the cities around the center
-        rot_matrix = np.array([[np.cos(np.radians(rot_angle)), np.sin(np.radians(rot_angle))],
-                               [-np.sin(np.radians(rot_angle)), np.cos(np.radians(rot_angle))]])
-        cities = (cities - diag_r) @ rot_matrix.T + diag_r
+        if self.is_train:
+            rot_angle = np.random.randint(0, 360)
         
-        img = img.rotate(rot_angle)
+            img = img.rotate(rot_angle, resample=Image.BILINEAR)
+            heatmap = heatmap.rotate(rot_angle, resample=Image.BILINEAR)
         
-        if np.random.rand() > 0.5:
-            cities[:, 0] = 2 * diag_r - 1 - cities[:, 0]
-            img = img.transpose(Image.FLIP_LEFT_RIGHT)
+            if np.random.rand() > 0.5:
+                img = img.transpose(Image.FLIP_LEFT_RIGHT)
+                heatmap = heatmap.transpose(Image.FLIP_LEFT_RIGHT)
         
         # Extract the img_size x img_size image
         half_w = int(self.img_size / 2)
         img = img.crop((diag_r - half_w, diag_r - half_w, diag_r + half_w, diag_r + half_w))
-        cities = cities[(cities[:, 0] > diag_r - half_w) & (cities[:, 0] < diag_r + half_w) &
-                        (cities[:, 1] > diag_r - half_w) & (cities[:, 1] < diag_r + half_w)]
+        heatmap = heatmap.crop((diag_r - half_w, diag_r - half_w, diag_r + half_w, diag_r + half_w))
         
         # center the cities
-        cities = cities - (diag_r - half_w)
         
         img = T.ToTensor()(img)/self.NORMALIZE_VARIANCE
+        heatmap = T.ToTensor()(heatmap)
         
-        # Apply water mask
-        water_mask = img < 0
-        img[water_mask] = 0
+        heatmap = heatmap + 1e-10
+        heatmap = heatmap / heatmap.sum()
         
-        # city_img = np.zeros((1, self.img_size, self.img_size))
-        # city_img[0, cities[:, 1].astype(int), cities[:, 0].astype(int)] = 1
-        
-        # Convert to heatmap
-        heatmap = np.zeros((1, self.img_size, self.img_size)) + 1e-6
-        
-        for city in cities:
-            heat = np.exp(-((np.arange(self.img_size) - city[0]) ** 2 + 
-                                   (np.arange(self.img_size)[:, None] - city[1]) ** 2) /
-                                   (2 * self.smoothing ** 2)
-                                )
-            heat[water_mask[0]] = 0
-            heatmap += heat / heat.sum()
-    
-        heatmap /= heatmap.sum()
-            
-        heatmap = torch.tensor(heatmap).float()
         return img, heatmap
+        
+    def _load_data_info(self):
+        """
+        Loads the .txt files at 
+        """
+        # load the split file
+        with self.split_file.open("r") as f:
+            data = json.load(f)
+            
+            paths_train = data["paths_train"]
+            paths_val = data["paths_val"]
+            
+            paths = paths_train if self.is_train else paths_val
+            
+        # Load the paths from the .txt file with the format:
+        # (path_to_img, path_to_heatmap)
+        # (path_to_img, path_to_heatmap)
+        # ...
+        with open(paths, "r") as f:
+            data_paths = f.readlines()
+            
+        self.height_paths = []
+        self.heatmap_paths = []
+        
+        for path in data_paths:
+            path = path.split()
+            self.height_paths.append(path[0])
+            self.heatmap_paths.append(path[1])
+            
+        
     
-    def _compute_data_extraction(self):
+    def _preprocess_and_save_data(self):
         """
         This function does the following.
         For each datapoint. Compute n x n image extractions from the data.
@@ -178,79 +187,112 @@ class CityDataset(Dataset):
           - (path_idx, x, y) where x and y is the center in the original image
         """
         
-        assert self.height_paths, f"No data found at {self.data_path}, call _extract_city_and_height_paths first"
+        height_train_paths, city_train_paths, height_val_paths, city_val_paths = self._extract_city_and_height_paths()
         
-        extraction_info = []
-        max_city_count = 0
+        data_paths = {"train" : [], "val" : []}
         
-        for i, (height_path, city_path) in tqdm.tqdm(enumerate(zip(self.height_paths, self.city_paths)),
-                                                     total=len(self.height_paths),
-                                                     desc="Extracting data"):
+        for suffix, height_paths, city_paths in tqdm.tqdm([("train", height_train_paths, city_train_paths),
+                                                           ("val", height_val_paths, city_val_paths)],
+                                                          desc="Extracting data",
+                                                          total=2,
+                                                          leave=False):
+            for i, (height_path, city_path) in tqdm.tqdm(enumerate(zip(height_paths, city_paths)),
+                                                        total=len(height_paths),
+                                                        desc="Extracting data",
+                                                        leave=False):
+                    
+                img_raw = np.load(height_path)
+                cities = pd.read_csv(city_path)
                 
-            img = np.load(height_path)
-            cities = pd.read_csv(city_path)
-            
-            diag_r = int(np.sqrt(2) * (self.img_size / 2))
-            half_w = int(self.img_size / 2)
-            
-            # Extract the cities from the image
-            for x in range(diag_r + half_w, img.shape[0] - diag_r, self.img_size - self.cutout_overlap):
-                for y in range(diag_r + half_w, img.shape[1] - diag_r, self.img_size - self.cutout_overlap):
-                    
-                    city_extract = cities[(cities["T_x"] > x - half_w) & (cities["T_x"] < x + half_w) &
-                                          (cities["T_y"] > y - half_w) & (cities["T_y"] < y + half_w) &
-                                          (cities["type"] != "administrative")]
-                    
-                    if len(city_extract) > max_city_count:
-                        max_city_count = len(city_extract)
+                diag_r = int(np.sqrt(2) * (self.img_size / 2))
+                half_w = int(self.img_size / 2)
+                
+                # Extract the cities from the image
+                for x in range(diag_r + half_w, img_raw.shape[0] - diag_r, self.img_size - self.cutout_overlap):
+                    for y in range(diag_r + half_w, img_raw.shape[1] - diag_r, self.img_size - self.cutout_overlap):
                         
-                    if len(city_extract) > self.min_cities and \
-                       len(city_extract) < self.max_cities:
-                             
-                        extraction_info.append((i, x, y))
+                        city_extract = cities[(cities["T_x"] > x - half_w) & (cities["T_x"] < x + half_w) &
+                                            (cities["T_y"] > y - half_w) & (cities["T_y"] < y + half_w) &
+                                            (cities["type"] != "administrative")]
                         
-        if self.verbose:
-            print("[DATA INFO] Observed max of cities in a datapoint: ", max_city_count)
+                            
+                        if len(city_extract) < self.min_cities or \
+                        len(city_extract) > self.max_cities:
+                            continue
+                        
+                        img, heatmap = self._preprocess(img_raw, cities, x, y)
+                        
+                        img_path = self.processed_data_path / suffix / f"{i}_{x}_{y}_img.npy"
+                        heatmap_path = self.processed_data_path / suffix / f"{i}_{x}_{y}_heatmap.npy"
+                        
+                        np.save(img_path, img)
+                        np.save(heatmap_path, heatmap)
+                        
+                        data_paths[suffix].append((img_path, heatmap_path))
+                        
+        # Save the data to a .txt file
+        save_path_train = self.processed_data_path / "data_paths_train.txt"
+        save_path_val = self.processed_data_path / "data_paths_val.txt"
+
+        with open(save_path_train, "w") as f:
+            for path in data_paths["train"]:
+                f.write(f"{path[0]} {path[1]}\n")
+                
+        with open(save_path_val, "w") as f:
+            for path in data_paths["val"]:
+                f.write(f"{path[0]} {path[1]}\n")
                   
-        return extraction_info
+        return save_path_train, save_path_val
     
-    def _plot_datapoint(self, idx : int):
+    def _preprocess(self, 
+                    img : np.ndarray,
+                    cities : pd.DataFrame,
+                    x : int,
+                    y : int):
         
-        i, x, y = self.extraction_info[idx]
+        diag_r = int(np.sqrt(2) * (self.img_size / 2))
+    
+        img = Image.fromarray(img)
+    
+        # Extract 2x diag_r
+        img = img.crop((x - diag_r, y - diag_r, x + diag_r, y + diag_r))
         
-        img = np.load(self.height_paths[i])
-        cities = pd.read_csv(self.city_paths[i])
+        cities = cities[(cities["T_x"] > x - diag_r) & (cities["T_x"] < x + diag_r) &
+                        (cities["T_y"] > y - diag_r) & (cities["T_y"] < y + diag_r) &
+                        (cities["type"] != "administrative")]
+        cities = np.array([cities["T_x"] - (x - diag_r), cities["T_y"] - (y - diag_r)]).T
         
-        half_w = int(self.img_size / 2)
+        img = np.array(img)
         
-        city_outside = cities[(cities["T_x"] < x - half_w) | (cities["T_x"] > x + half_w) |
-                                (cities["T_y"] < y - half_w) | (cities["T_y"] > y + half_w) |
-                                (cities["type"] == "hamlet") | (cities["type"] == "administrative")]
-        city_extract = cities[(cities["T_x"] > x - half_w) & (cities["T_x"] < x + half_w) &
-                              (cities["T_y"] > y - half_w) & (cities["T_y"] < y + half_w) &
-                              (cities["type"] != "hamlet") & (cities["type"] != "administrative")]
-                        
-        plt.imshow(img)
-        plt.scatter(city_outside["T_x"],
-                    city_outside["T_y"], c="b")
-        plt.scatter(city_extract["T_x"],
-                    city_extract["T_y"], c="r")
-        rect = plt.Rectangle((x - half_w, y - half_w), self.img_size, self.img_size, linewidth=1, edgecolor='r', facecolor='none')
-        plt.gca().add_patch(rect)
+        # Apply water mask
+        water_mask = img < 0
+        img[water_mask] = 0
         
-        for _, row in city_extract.iterrows():
-            plt.text(row["T_x"], row["T_y"], row["name"], fontsize=9, ha='right')
+        # Convert to heatmap
+        heatmap = np.zeros((diag_r*2, diag_r*2)) + 1e-10
         
-        plt.show()
+        for city in cities:
+            heat = np.exp(-((np.arange(diag_r*2) - city[0]) ** 2 + 
+                            (np.arange(diag_r*2)[:,None] - city[1]) ** 2) /
+                            (2 * self.smoothing ** 2))
+            
+            heat[water_mask] = 0
+            heat += 1e-10
+            heatmap += heat / heat.sum() 
+    
+        heatmap /= heatmap.sum()
+            
+        heatmap = torch.tensor(heatmap).float()
+        return img, heatmap
         
         
-    def _extract_city_and_height_paths(self) -> tuple[list[Path], list[Path]]:
+    def _extract_city_and_height_paths(self):# -> tuple[list[Path], list[Path]]:
         """
         Extract the paths to the city and height data
         """
         
         # Find all paths that end with ".npy"
-        all_height_paths = list(Path(self.data_path).rglob("*.npy"))
+        all_height_paths = list(Path(self.unprocessed_data_path).rglob("*.npy"))
         
         height_paths : list[Path] = []
         meta_paths : list[Path]   = []
@@ -278,11 +320,13 @@ class CityDataset(Dataset):
         train_idx = np.random.choice(len(height_paths), num_train_files, replace=False)
         val_idx = np.array([i for i in range(len(height_paths)) if i not in train_idx])
         
-        idxs = train_idx if self.is_train else val_idx
-            
-        height_paths = [height_paths[i] for i in idxs]
-        city_paths = [city_paths[i] for i in idxs]
-        return height_paths, city_paths
+        height_train_paths = [height_paths[i] for i in train_idx]
+        city_train_paths = [city_paths[i] for i in train_idx]
+        
+        height_val_paths = [height_paths[i] for i in val_idx]
+        city_val_paths = [city_paths[i] for i in val_idx]
+        
+        return height_train_paths, city_train_paths, height_val_paths, city_val_paths
     
 
 def get_city_dataloader(batch_size=32, shuffle=True, num_workers=4, data_kwargs={}):
@@ -305,9 +349,9 @@ if __name__ == "__main__":
         
         img, heatmap = dataset[i]
         
-        fig, axs = plt.subplots(1, 3, figsize=(10, 5))
+        fig, axs = plt.subplots(1, 2, figsize=(10, 5))
         
         axs[0].imshow(img.permute(1, 2, 0))
         axs[1].imshow(heatmap.permute(1, 2, 0))
-        
-        dataset._plot_datapoint(i)
+        plt.show()
+        # dataset._plot_datapoint(i)

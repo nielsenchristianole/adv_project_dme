@@ -6,60 +6,100 @@ identifier:
 
 logging:
   dir: CityGeneration/out/logs
-  log_every_n_steps: 1
+  log_every_n_steps: 1 # 
   log_gradients: # Log the mean and max gradient. Loops through all parameters so use with caution
-    use: false
+    use: true
+    step_type: batch # batch, epoch
+    every_n: 100
+  log_pred:
+    use: true
     step_type: epoch # batch, epoch
     every_n: 1
 
 checkpointing:
-  dir: CityGeneration/out/checkpoints
   save_top_k: 5
   mode: min # min or max
+  every_n_epochs: 1
 
 training:
   accelerator: auto # cpu, gpu, tpu, hpu, mps, auto
-  epochs: 1000
-  precision: 16-mixed # 16-mixed, 16-true ect. See pytorch lightning docs
-  accumulate_grad_batches: 8
+  epochs: 10000
+  precision: 32-true # 16-mixed, 16-true ect. See pytorch lightning docs
+  accumulate_grad_batches: 50
   gradient_clipping:
-    use: false
-    value: 0.0
+    use: true
+    value: 1.0
     algorithm: "norm" # norm or value
 
   loss_functions:
-    - target: src.losses.image_kd_divergence.ImageKLDivergence
-      weight: 1.0
+    - target: src.losses.kl_divergence.KLDivergence
+      weight: 1
       params:
         reduction: "batchmean"
         log_target: false
+    # - target: src.losses.l2_norm.L2Norm
+    #   weight: 1
+    #   params:
+    #     exp_space: true
+    #     reduce: true
+    # - target: src.losses.bce_loss.BCELoss
+    #   weight: 1
+    #   params:
+    #     reduction: sum
         
   optimizer:
-    optimizer: "adan" # adam, adan, sgd, etc.
-    weight_decay: 1e-4
-    lr_half_period: 2000
+    optimizer: "adamw" # adamp, adan, sgd, etc.
+    weight_decay: 0 #1e-5 # default: 1e-4
+    lr_half_period: 50
     lr_mult_period: 2
-    lr_min: 1e-4
-    lr_max: 1e-2
-    lr_warmup_period: 1000
-    lr_warmup_max: 4e-2
+    lr_min: 1e-5 # default: 1e-4
+    lr_max: 1e-4 # default: 1e-3
+    lr_warmup_period: 20
+    lr_warmup_max: 4e-4 # default: 4e-3s
 
 dataset:
   target: src.dataset.city_dataloader.CityDataset
   params:
-    data_path: data/undistorted_data_ortho_3
-    min_cities : 2
+    unprocessed_data_path: data/undistorted_data_ortho_3
+    processed_data_path: CityGeneration/data
+    min_cities : 10
     max_cities : 10000
     img_size : 128
     cutout_overlap : 64
-    smoothing : 5
+    smoothing : 10
+    max_epoch_length: 1000000
     val_split: 0.2
     data_split_seed: 42
     verbose : true
 
 dataloader:
-  batch_size: 4
+  batch_size: 8
   persistent_workers: true
   num_workers: -1 # if -1 then os.cpu_count()
   val_worker_ratio: 0.1
-  pin_memory: true
+  pin_memory: false
+
+# """
+# ### INFERENCE ###
+# Define an inference models and the parameters that should be passed.
+# The inference model takes a unprocessed datapoint, processes it to the correct
+# format and then applies inference on the trained model.
+# The inference model has the following structure:
+
+# class InferenceModel(nn.Module):
+#   def __init__(self, model : nn.Module, **kwargs):
+#     super().__init__()
+#     self.model = model
+#     ...
+
+#   def forward(self, input) -> Any:
+#     prepared = self.prepare(input)
+#     return self.model(prepared)
+
+#   def _prepare(self, input):
+#     # preprocesses the data and returns
+# """
+inference:
+  target: model.inference_model.InferenceModel
+  params: 
+    img_size: 128

@@ -1,21 +1,5 @@
-target: model.model.UNetModel
+target: model.unet.UNet
 params:
-  image_size: 128
   in_channels: 1
-  model_channels: 64 # needs to be factor 32
   out_channels: 1
-  num_res_blocks: 2
-  attention_resolutions:
-  - 2
-  - 4
-  - 8
-  channel_mult:
-  - 1
-  - 2
-  - 3
-  - 4
-  conv_resample: false
-  num_head_channels: 32
-  use_spatial_transformer: False
-  transformer_depth: 1
    
