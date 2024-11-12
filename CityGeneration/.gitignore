@@ -1,0 +1,12 @@
+
+data/*
+!data/.gitkeep
+
+out/*
+!out/.gitkeep
+
+# pycache
+__pycache__/
+
+# vscode
+.vscode/

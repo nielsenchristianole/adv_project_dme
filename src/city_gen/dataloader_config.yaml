@@ -1,6 +1,0 @@
-min_cities : 2
-max_cities : 5000
-img_size : 256
-cutout_overlap : 128
-smoothing : 10
-verbose : True
