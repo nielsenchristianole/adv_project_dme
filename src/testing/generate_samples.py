@@ -22,8 +22,12 @@ num_samples_per_cond = 200
 conds = np.arange(0, 0.75 + 0.05, 0.05)
 
 # dataset samples
+augment_train = False
+
 sample_train = False
 sample_test = False
+sample_uncond = False
+sample_cond = True
 
 # model configs
 model_configs = {
@@ -60,64 +64,66 @@ with open(out_dir / 'config.json', 'w') as f:
     json.dump(model_configs, f, indent=2)
 
 
-# get uncond shapes
-with torch.no_grad():
+if sample_uncond:
+    # get uncond shapes
+    with torch.no_grad():
 
-    pbar = tqdm.trange(num_samples, desc='Generating uncond samples')
+        pbar = tqdm.trange(num_samples, desc='Generating uncond samples')
 
-    _sample_counter = len(list((out_dir / 'shapes').iterdir()))
-    while pbar.n < num_samples:
+        _sample_counter = len(list((out_dir / 'shapes').iterdir()))
+        while pbar.n < num_samples:
 
-        _batch_size = min(batch_size, num_samples - pbar.n)
-
-        # shape
-        with suppress_logs():
-            cond, target_areas = shape_model.cond_stage_model.sample(_batch_size, return_scalers=True)
-            z_0_shape, _ = shape_model.sample_log(cond.to(device), _batch_size, ddim=True, ddim_steps=200)
-
-            x_shape_logits = shape_model.decode_first_stage(z_0_shape)
-            shape_im = shape_model.first_stage_model.reconstruction_to_image(x_shape_logits)
-
-            # height
-            z_0_height, _ = height_model.sample_log(z_0_shape, _batch_size, ddim=True, ddim_steps=200)
-
-            x_height_logits = height_model.decode_first_stage(z_0_height)
-            height_im = height_model.first_stage_model.reconstruction_to_image(x_height_logits, shape_cond=shape_im)
-
-        for _shape, _height in zip(shape_im.cpu().numpy().squeeze(1), height_im.cpu().numpy().squeeze(1)):
-            np.save(out_dir / 'shapes' / f'shape_{pbar.n + _sample_counter}.npy', _shape)
-            np.save(out_dir / 'heights' / f'height_{pbar.n + _sample_counter}.npy', _height)
-            pbar.update(1)
-
-            if pbar.n >= num_samples:
-                break
-
-    pbar.close()
-
-
-# get cond shapes
-with torch.no_grad():
-
-    for cond_float in tqdm.tqdm(conds, desc='Generating cond samples'):
-
-        _dir = out_dir / 'shape_conds' / f'{cond_float:.2f}'
-        _dir.mkdir(exist_ok=True)
-        _sample_counter = len(list(_dir.iterdir()))
-        for n_missing in tqdm.trange(0, num_samples_per_cond, batch_size, leave=False):
-
-            _batch_size = min(batch_size, num_samples_per_cond - n_missing)
+            _batch_size = min(batch_size, num_samples - pbar.n)
 
             # shape
             with suppress_logs():
-                cond, target_areas = shape_model.cond_stage_model.sample(_batch_size, return_scalers=True, conds=cond_float)
+                cond, target_areas = shape_model.cond_stage_model.sample(_batch_size, return_scalers=True)
                 z_0_shape, _ = shape_model.sample_log(cond.to(device), _batch_size, ddim=True, ddim_steps=200)
 
                 x_shape_logits = shape_model.decode_first_stage(z_0_shape)
                 shape_im = shape_model.first_stage_model.reconstruction_to_image(x_shape_logits)
 
-            for _shape in shape_im.cpu().numpy().squeeze(1):
-                np.save(_dir / f'shape_{_sample_counter}.npy', _shape)
-                _sample_counter += 1
+                # height
+                z_0_height, _ = height_model.sample_log(z_0_shape, _batch_size, ddim=True, ddim_steps=200)
+
+                x_height_logits = height_model.decode_first_stage(z_0_height)
+                height_im = height_model.first_stage_model.reconstruction_to_image(x_height_logits, shape_cond=shape_im)
+
+            for _shape, _height in zip(shape_im.cpu().numpy().squeeze(1), height_im.cpu().numpy().squeeze(1)):
+                np.save(out_dir / 'shapes' / f'shape_{pbar.n + _sample_counter}.npy', _shape)
+                np.save(out_dir / 'heights' / f'height_{pbar.n + _sample_counter}.npy', _height)
+                pbar.update(1)
+
+                if pbar.n >= num_samples:
+                    break
+
+    pbar.close()
+
+
+if sample_cond:
+    # get cond shapes
+    with torch.no_grad():
+
+        for cond_float in tqdm.tqdm(conds, desc='Generating cond samples'):
+
+            _dir = out_dir / 'shape_conds' / f'{cond_float:.2f}'
+            _dir.mkdir(exist_ok=True)
+            _sample_counter = len(list(_dir.iterdir()))
+            for n_missing in tqdm.trange(0, num_samples_per_cond, batch_size, leave=False):
+
+                _batch_size = min(batch_size, num_samples_per_cond - n_missing)
+
+                # shape
+                with suppress_logs():
+                    cond, target_areas = shape_model.cond_stage_model.sample(_batch_size, return_scalers=True, conds=cond_float)
+                    z_0_shape, _ = shape_model.sample_log(cond.to(device), _batch_size, ddim=True, ddim_steps=200)
+
+                    x_shape_logits = shape_model.decode_first_stage(z_0_shape)
+                    shape_im = shape_model.first_stage_model.reconstruction_to_image(x_shape_logits)
+
+                for _shape in shape_im.cpu().numpy().squeeze(1):
+                    np.save(_dir / f'shape_{_sample_counter}.npy', _shape)
+                    _sample_counter += 1
 
 
 
@@ -130,18 +136,26 @@ seed = 42069
 if sample_train:
     shape_data = ShapeData('./data/contours/df_128/df.shp', im_size=128, mode='train')
     height_data = HeightData('./data/height_contours/df_128/df.shp', im_size=128, mode='train')
+    generator = np.random.default_rng(seed)
 
     num_data = min(len(shape_data), len(height_data))
-    idxs = np.random.default_rng(seed).choice(num_data, num_samples, replace=False)
+    idxs = generator.choice(num_data, num_samples, replace=False)
 
     _dir = out_dir / 'train'
     _dir.mkdir(exist_ok=True)
     (_dir / 'shapes').mkdir(exist_ok=True)
     (_dir / 'heights').mkdir(exist_ok=True)
 
+    mirror = False
+    angle = 0.
+
     for idx in tqdm.tqdm(idxs, 'training samples'):
-        shape = shape_data[idx]['image'].numpy().squeeze(-1)
-        height = height_data[idx]['image'].numpy().squeeze(-1)
+        if augment_train:
+            mirror = generator.random() >= 0.5
+            angle = generator.uniform(0, 2 * np.pi)
+
+        shape = shape_data.__getitem__(idx, mirror=mirror, angle=angle)['image'].numpy().squeeze(-1)
+        height = height_data.__getitem__(idx, mirror=mirror, angle=angle)['image'].numpy().squeeze(-1)
 
         np.save(_dir / 'shapes' / f'shape_{idx}.npy', shape)
         np.save(_dir / 'heights' / f'height_{idx}.npy', height)

@@ -39,7 +39,7 @@ raw_table_str = r"""
 
 \begin{tabular}{lrrrrrrrr}
     \toprule
-    \multirow{2}{*}{Method} & \multicolumn{2}{l}{MMD ($\downarrow$)} & & \multicolumn{2}{l}{COV ($\uparrow$)} & & \multicolumn{2}{l}{1nn ($\downarrow$)}} \\
+    \multirow{2}{*}{Method} & \multicolumn{2}{l}{MMD ($\downarrow$)} & & \multicolumn{2}{l}{COV ($\uparrow$)} & & \multicolumn{2}{l}{1nn ($\downarrow$)} \\
     \cmidrule(lr){2-3} \cmidrule(lr){5-6} \cmidrule(lr){8-9}
      & __dist__ & & __dist__ & & __dist__ \\
     \midrule
@@ -50,6 +50,8 @@ raw_table_str = r"""
     \label{tab:__label__}
 \end{table}
 """
+
+# v1 = calculate_stats(sample_heights, test_heights, L2)
 
 # calculate shape stats
 shape_tabular_vals = []
