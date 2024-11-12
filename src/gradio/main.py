@@ -1,5 +1,6 @@
-from typing import Literal, Optional, List
+from typing import Literal, Optional, List, Union
 
+import cv2
 import numpy as np
 import gradio as gr
 import shapely
@@ -22,6 +23,9 @@ with gr.Blocks() as demo:
     height_map_state = gr.State(None)
     towns_state = gr.State(list)
     roads_state = gr.State(RoadGraph.empty)
+    
+    poly_points_state = gr.State(list)
+    poly_closed_state = gr.State(False)
 
     with gr.Row():
 
@@ -31,20 +35,19 @@ with gr.Blocks() as demo:
 
                 # shape generation
                 with gr.Column():
-                    run_generate_shape_button = gr.Button('Generate Shape')
                     with gr.Accordion('Shape config', open=False):
                         shape_config_num_islands = gr.Slider(value=1, label='Number of Islands', minimum=1, maximum=10, step=1, interactive=True)
+                    run_generate_shape_button = gr.Button('Generate Shape')
                 
                 # height map generation
                 with gr.Column():
-                    run_generate_height_map_button = gr.Button('Generate Height Map')
                     with gr.Accordion('Height Map config', open=False):
                         height_map_config_terrain_roughness = gr.Slider(value=0.2, label='Terrain Roughness', minimum=0, maximum=1, step=0.001, interactive=True)
                         height_map_config_max_height = gr.Slider(value=1000, label='Max Island Height [m]', minimum=1, maximum=8000, step=1, interactive=True)
+                    run_generate_height_map_button = gr.Button('Generate Height Map')
 
                 # town generation
                 with gr.Column():
-                    run_generate_town_button = gr.Button('Generate Town(s)')
                     with gr.Accordion('Town config', open=False):
                         reset_town_button = gr.Button('Reset Towns')
                         with gr.Tab('Random') as town_config_random_tab:
@@ -56,10 +59,10 @@ with gr.Blocks() as demo:
                             town_config_custom_town_feature_checkboxgroup = gr.CheckboxGroup([('Coastal', 'is_coastal')], label='Town Features')
                             @town_config_custom_tab.select(outputs=[town_generation_method])
                             def _(): return 'Custom'
+                    run_generate_town_button = gr.Button('Generate Town(s)')
 
                 # road generation
                 with gr.Column():
-                    run_generate_road_button = gr.Button('Generate Road')
                     with gr.Accordion('Road config', open=False):
                         reset_roads_button = gr.Button('Reset Roads')
                         
@@ -81,6 +84,7 @@ with gr.Blocks() as demo:
                         road_config_road_cost = gr.Slider(value=0.5, label='Road Cost', minimum=0.1, maximum=1, step=0.1, interactive=True)
                         road_config_slope_cost = gr.Slider(value=0.5, label='Slope Cost Factor', minimum=0.1, maximum=1, step=0.1, interactive=True)
                         road_config_curvature_cost = gr.Slider(value=0.5, label='Curvature Cost Factor', minimum=0.1, maximum=1, step=0.1, interactive=True)
+                    run_generate_road_button = gr.Button('Generate Road')
 
         # map column
         with gr.Column():
@@ -91,6 +95,17 @@ with gr.Blocks() as demo:
                     interactive=False,
                     image_mode='RGB',
                     show_download_button=False)
+                
+                change_shape_mode_btn = gr.Button('Change Shape Mode')
+                
+                with gr.Row():                    
+                    close_btn = gr.Button('Close Polygon') # Changes to Open Polygon when closed
+                    clear_btn = gr.Button('Clear Points')
+                with gr.Row():
+                    poly_add_land_btn = gr.Button('Add Land')
+                    poly_add_sea_btn = gr.Button('Add Sea')
+                    poly_regen_area_btn = gr.Button('Regenerate Area')
+                
                 with gr.Row():
                     gr.DownloadButton('Download PNG')
                     gr.DownloadButton('Download JSON')
@@ -104,26 +119,155 @@ with gr.Blocks() as demo:
                     generate_mesh_button = gr.Button('Generate 3D Mesh')
             
             
-            
+    # ---------------------------------------------------------------------------- #
+    #                              Polygon Edit Shape                              #
+    # ---------------------------------------------------------------------------- #
+    # ------------------------------- Edit polygon ------------------------------- #
+    @output_image.select(
+        inputs=[poly_points_state, poly_closed_state],
+        outputs=[poly_points_state])
+    def add_point(poly_points: list, poly_closed: bool, evt: gr.SelectData):
+        if poly_closed:
+            gr.Warning("Polygon is closed, to add more points open the polygon!")
+            return poly_points
+        
+        poly_points.append(evt.index)
+        return poly_points
 
+    @close_btn.click(
+        inputs=[poly_closed_state],
+        outputs=[poly_closed_state])
+    def close_polygon(poly_closed):
+        if poly_closed:
+            poly_closed = False
+        else:
+            poly_closed = True
+        return poly_closed
+
+    @poly_closed_state.change(
+        inputs=[poly_closed_state],
+        outputs=[close_btn])
+    def update_close_btn_text(poly_closed):
+        return 'Open Polygon' if poly_closed else 'Close Polygon'
+    
+    # ------------------------------- Clear points ------------------------------- #
+    @clear_btn.click(
+        inputs=[poly_points_state],
+        outputs=[poly_points_state, poly_closed_state, close_btn])
+    @output_image.clear(
+        inputs=[poly_points_state],
+        outputs=[poly_points_state, poly_closed_state, close_btn])
+    def clear_points(points: list):
+                        points.clear()
+                        return points, False, 'Open Polygon'
+    # ------------------------------ Add/remove area ----------------------------- #
+    @poly_add_land_btn.click(
+        inputs=[shape_state, 
+                poly_points_state, 
+                poly_closed_state,
+                output_image, 
+                gr.State('add')], # TODO: Hotfix for now
+        outputs=[shape_state, 
+                 poly_points_state, 
+                 poly_closed_state])
+    @poly_add_sea_btn.click(
+        inputs=[shape_state, 
+                poly_points_state, 
+                poly_closed_state,
+                output_image,
+                gr.State('subtract')],
+        outputs=[shape_state, 
+                 poly_points_state, 
+                 poly_closed_state])
+    def add_subtract_area(shape_mask: np.ndarray, 
+                          poly_points: list, 
+                          poly_closed: bool,
+                          high_res_image: np.ndarray, 
+                          mode: Literal['add', 'subtract']):
+        if not poly_closed:
+            gr.Warning('Polygon is not closed, please close the polygon first!')
+            return shape_mask, poly_points, poly_closed
+        # TODO: We can keep it in one resolution instead of this up and down scaling
+        scale_factor =  shape_mask.shape[0] / high_res_image.shape[0]
+        scaled_poly_points = np.array(poly_points) * scale_factor
+        
+        scaled_poly_points = np.array(scaled_poly_points, dtype=np.int32).reshape((-1, 1, 2))
+        
+        # Create a mask for the polygon
+        polygon_mask = np.zeros_like(shape_mask, dtype=np.uint8)
+        # Fill the polygon on the mask
+        polygon_mask = cv2.fillPoly(polygon_mask, [scaled_poly_points], 1)
+        if mode == 'add':
+            shape_mask[polygon_mask == 1] = 1
+        elif mode == 'subtract':
+            shape_mask[polygon_mask == 1] = 0
+        
+        import matplotlib.pyplot as plt
+        plt.imshow(shape_mask)
+        return shape_mask, [], False
+    
+    @poly_regen_area_btn.click(
+        inputs=[],
+        outputs=[])
+    def regen_area():
+        gr.Warning('Not implemented yet, coming soon!')
+    
     # ---------------------------------------------------------------------------- #
     #                             Generation functions                             #
     # ---------------------------------------------------------------------------- #
-    # shape generation
+    # -------------------------------- Poly Change ------------------------------- #
+    @change_shape_mode_btn.click(
+        inputs=[
+            shape_state,
+            poly_points_state,
+            poly_closed_state],
+        outputs=[
+            shape_state,
+            output_image])
+    @poly_points_state.change(
+        inputs=[
+            shape_state,
+            poly_points_state,
+            poly_closed_state],
+        outputs=[
+            shape_state,
+            output_image])
+    @poly_closed_state.change(
+        inputs=[
+            shape_state,
+            poly_points_state,
+            poly_closed_state],
+        outputs=[
+            shape_state,
+            output_image])
+    def change_shape_display(
+        shape: Optional[np.ndarray],
+        poly_points: List[List[float]],
+        poly_closed: bool
+    ) -> dict:
+        polygon_dict = {'poly_points': poly_points, 'poly_closed': poly_closed}
+        if shape is None:
+            shape = np.load('assets/defaults/shape_0.npy')
+        chart = plot_map(shape=shape, height_map=None, towns=None, roads=None, return_step='change_poly_shape', polygon_dict=polygon_dict)
+
+        return shape, chart
+    
+    # ----------------------------------- Shape ---------------------------------- #
     @run_generate_shape_button.click(
         inputs=[
-            shape_config_num_islands],
+            shape_config_num_islands,
+            poly_points_state,
+            poly_closed_state],
         outputs=[
             shape_state,
             output_image])
     def generate_shape(
-        shape_config_num_islands: int
+        shape_config_num_islands: int,
+        poly_points: List[List[float]],
+        poly_closed: bool
     ) -> dict:
-
-        shape = list(np.load('assets/defaults/shape.npz').values())
-        chart = plot_map(shape, height_map=None, towns=None, roads=None, return_step='shape')
-
-        return shape, chart
+        chart = plot_map(shape=None, height_map=None, towns=None, roads=None, return_step='shape')
+        return None, chart
 
     # height map generation
     @run_generate_height_map_button.click(

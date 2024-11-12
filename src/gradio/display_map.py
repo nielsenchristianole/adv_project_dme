@@ -26,47 +26,52 @@ NON_COASTAL_TOWN_COLOR = np.array([255, 255, 255])
 ICON_GETTER = GetIcon()
 class RETURN_STEP_OPTIONS(IntEnum):
     empty = 0
-    shape = 1
+    poly_shape = 1
     height_map = 2
     towns = 3
     roads = 4
+    change_poly_shape = 5
 
 
 def plot_map(
-    shape: Optional[shapely.MultiPolygon]=None,
+    shape: Optional[np.ndarray]=None, # Binary image of the shape of the map
     height_map: Optional[np.ndarray]=None,
     towns: Optional[List[Town]]=None,
     roads: Optional[RoadGraph]=None,
-    return_step: Literal['empty', 'shape', 'height_map', 'towns', 'roads']='roads',
+    return_step: Literal['empty', 'shape', 'height_map', 'towns', 'roads', 'change_poly_shape']='roads',
     *,
+    polygon_dict: Optional[dict]=None,
     resolution: Optional[int]=None,
     max_height: Optional[float]=None,
     num_contour_levels: int=4,
     contour_pixel_width: int=3,
     contour_color: Tuple[int,int,int]=(170,170,170),
     min_contour_length: int=10,
-    shape_pixel_width: int=10,
-    shape_color: Tuple[int,int,int]=(0,0,0),
+    poly_shape_pixel_width: int=10,
+    poly_shape_color: Tuple[int,int,int]=(0,0,0),
     contour_is_probably_not_closed_threshold: Optional[float]=None,
     towns_pixel_width: Optional[int]=None,
 ):
     """
     Get an array which is the map of the town
     """
+    
+    poly_shape = list(np.load('assets/defaults/shape.npz').values())
+    
     return_step = RETURN_STEP_OPTIONS[return_step]
 
     # fix resolution param
     if resolution is None:
         if height_map is not None:
             resolution = max(height_map.shape[:2])
-        elif shape is not None:
-            resolution = shape.bounds[2:] if isinstance(shape, shapely.MultiPolygon) else np.ceil(np.array([np.max(s, axis=0).squeeze(0) for s in shape]).max(axis=0)).astype(int)[::-1]
+        elif poly_shape is not None:
+            resolution = poly_shape.bounds[2:] if isinstance(poly_shape, shapely.MultiPolygon) else np.ceil(np.array([np.max(s, axis=0).squeeze(0) for s in poly_shape]).max(axis=0)).astype(int)[::-1]
             map_so_far = np.full((*resolution, 3), 255, dtype=np.uint8)
             resolution = max(resolution).item()
         else:
             resolution = 2000
 
-    # return empty map
+    # --------------------------------- Empty map -------------------------------- #
     if return_step == RETURN_STEP_OPTIONS.empty:
         return np.ones((resolution, resolution, 1), dtype=np.uint8) * WATER_COLOR[None, None, :]
 
@@ -75,9 +80,49 @@ def plot_map(
         contour_is_probably_not_closed_threshold = resolution * 0.1
     if towns_pixel_width is None:
         towns_pixel_width = resolution // 20
+        
+    # --------------------------- Change Shape by Poly --------------------------- #
+    if return_step == RETURN_STEP_OPTIONS.change_poly_shape and polygon_dict:
+        out_resolution = (
+            int(resolution * shape.shape[0] / max(shape.shape[:2])),
+            int(resolution * shape.shape[1] / max(shape.shape[:2])))
+        shape = cv2.resize(shape, out_resolution[::-1], interpolation=cv2.INTER_NEAREST)
+        sea_mask = shape == 0
+        
+        map_so_far = np.empty((*shape.shape, 3), dtype=np.uint8)
+        map_so_far[sea_mask] = WATER_COLOR
+        map_so_far[~sea_mask] = TERRAIN_COLORMAP[0]
+        
+        # Draw User Polygon
+        poly_points = polygon_dict['poly_points']
+        poly_closed = polygon_dict['poly_closed']
 
+        if poly_points: # if there are points
+            # Draw lines between points
+            for i in range(len(poly_points) - 1):
+                start_point = (int(poly_points[i][0]), int(poly_points[i][1]))
+                end_point = (int(poly_points[i + 1][0]), int(poly_points[i + 1][1]))
+                cv2.line(map_so_far, start_point, end_point, color=(0, 255, 0), thickness=2)
+                
+            if poly_closed:
+                # Draw a line between the last point and the first point to close the polygon
+                if len(poly_points) > 1:
+                    start_point = (int(poly_points[-1][0]), int(poly_points[-1][1]))
+                    end_point = (int(poly_points[0][0]), int(poly_points[0][1]))
+                    cv2.line(map_so_far, start_point, end_point, color=(0, 255, 0), thickness=2)
+                # Draw a transparent polygon
+                poly_points_np = np.array(poly_points, dtype=np.int32)
+                overlay = map_so_far.copy()
+                cv2.fillPoly(overlay, [poly_points_np], color=(0, 255, 0, 128))  # RGBA color with transparency
+                map_so_far = cv2.addWeighted(overlay, 0.5, map_so_far, 0.5, 0)
+            else:
+                # Draw points
+                for point in poly_points:
+                    cv2.circle(map_so_far, (int(point[0]), int(point[1])), radius=5, color=(0, 255, 0), thickness=-1)
+        
+        return map_so_far
 
-    # only generate the height map if given by return step
+    # -------------------------------- Height map -------------------------------- #
     if return_step >= RETURN_STEP_OPTIONS.height_map:
 
         if max_height is None:
@@ -114,30 +159,29 @@ def plot_map(
         map_so_far = cv2.drawContours(map_so_far , contours, -1, contour_color, contour_pixel_width)
 
 
-    # get the shape in correct format
-    if isinstance(shape, shapely.MultiPolygon):
-        shape_line = list()
-        for pol in shape:
-            shape_line.append(list(pol.exterior.coords))
+    # ------------------------ Contours and polyline shape ----------------------- #
+    if isinstance(poly_shape, shapely.MultiPolygon):
+        poly_shape_line = list()
+        for pol in poly_shape:
+            poly_shape_line.append(list(pol.exterior.coords))
             for interior in pol.interiors:
-                shape_line.append(list(interior.coords))
-        shape_line = [np.array(s, dtype=np.int32)[:,None,::-1] for s in shape_line]
-    if (shape is None) and (return_step >= RETURN_STEP_OPTIONS.height_map):
-        shape_line = measure.find_contours(simple_height_map_non_clipped, level=0)
-        shape_line = [s[:,None,::-1].astype(np.int32) for s in shape_line if s.shape[0] > 3]
-        shape_line = [np.concatenate((s,s[::-1]), axis=0) if np.linalg.norm(s[0] - s[-1]) > contour_is_probably_not_closed_threshold else s for s in shape_line]
-        # np.savez('assets/defaults/shape.npz', *shape_line)
-    elif isinstance(shape, list):
-        shape_line = shape
+                poly_shape_line.append(list(interior.coords))
+        poly_shape_line = [np.array(s, dtype=np.int32)[:,None,::-1] for s in poly_shape_line]
+    if (poly_shape is None) and (return_step >= RETURN_STEP_OPTIONS.height_map):
+        poly_shape_line = measure.find_contours(simple_height_map_non_clipped, level=0)
+        poly_shape_line = [s[:,None,::-1].astype(np.int32) for s in poly_shape_line if s.shape[0] > 3]
+        poly_shape_line = [np.concatenate((s,s[::-1]), axis=0) if np.linalg.norm(s[0] - s[-1]) > contour_is_probably_not_closed_threshold else s for s in poly_shape_line]
+        # np.savez('assets/defaults/poly_shape.npz', *poly_shape_line)
+    elif isinstance(poly_shape, list):
+        poly_shape_line = poly_shape
     else:
         raise ValueError()
 
-    # draw the shape on the map
-    map_so_far = cv2.drawContours(map_so_far, shape_line, -1, shape_color, shape_pixel_width)
+    # draw the poly_shape on the map
+    map_so_far = cv2.drawContours(map_so_far, poly_shape_line, -1, poly_shape_color, poly_shape_pixel_width)
 
-
+    # ----------------------------------- Towns ---------------------------------- #
     if return_step >= RETURN_STEP_OPTIONS.towns:
-
         # draw the towns on the map
         map_so_far = Image.fromarray(map_so_far.copy(), mode='RGB').convert('RGBA')
         for town in towns:
@@ -148,7 +192,7 @@ def plot_map(
 
         map_so_far = np.array(map_so_far.convert('RGB'))
 
-    # draw the roads
+    # ----------------------------------- Roads ---------------------------------- #
     if return_step >= RETURN_STEP_OPTIONS.roads:
         pass
 
@@ -159,8 +203,8 @@ if __name__ == '__main__':
     import matplotlib.pyplot as plt
 
     height_map = np.load('assets/defaults/height_map.npy')
-    shape = list(np.load('assets/defaults/shape.npz').values())
-    full_chart = plot_map(height_map=None, shape=shape, return_step='shape')
+    poly_shape = list(np.load('assets/defaults/poly_shape.npz').values())
+    full_chart = plot_map(height_map=None, poly_shape=poly_shape, return_step='poly_shape')
 
     plt.imshow(full_chart)
     plt.axis('off')
