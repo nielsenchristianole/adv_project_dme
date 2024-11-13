@@ -133,7 +133,8 @@ class TownGenerator:
             new_towns.append(Town(town_type=types[i],
                             is_coastal=is_coastal[i],
                             xyz=xyz,
-                            town_name=names[i]))
+                            town_name=names[i],
+                            connect=True))
                 
         return towns + new_towns
     

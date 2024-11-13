@@ -11,6 +11,7 @@ class Town(TypedDict):
     is_coastal: bool
     xyz: Tuple[float, float, float] # pixel space
     town_name: str
+    connect: bool
 
 
 class RoadNode(TypedDict):

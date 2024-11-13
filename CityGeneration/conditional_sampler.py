@@ -79,20 +79,20 @@ class ConditionalSampler:
             
             
             
-            import matplotlib.pyplot as plt
-            import matplotlib
-            matplotlib.use('TkAgg')
+            # import matplotlib.pyplot as plt
+            # import matplotlib
+            # matplotlib.use('TkAgg')
             
-            print(len(self.X_sampled))
-            fig, axs = plt.subplots(1, 3, figsize=(10, 5))
-            axs[0].imshow(self.prior_probs)
-            axs[0].scatter(x_new[:, 0], x_new[:, 1], color='red')
-            axs[0].axis('off')
-            axs[1].imshow(posterior_probs)
-            axs[1].axis('off')
-            axs[2].imshow(likelihood)
-            axs[2].axis('off')
-            plt.show()
+            # print(len(self.X_sampled))
+            # fig, axs = plt.subplots(1, 3, figsize=(10, 5))
+            # axs[0].imshow(self.prior_probs)
+            # axs[0].scatter(x_new[:, 0], x_new[:, 1], color='red')
+            # axs[0].axis('off')
+            # axs[1].imshow(posterior_probs)
+            # axs[1].axis('off')
+            # axs[2].imshow(likelihood)
+            # axs[2].axis('off')
+            # plt.show()
             
             # import pdb; pdb.set_trace()
             # # fig, axs = plt.subplots(1, 2, figsize=(10, 5))

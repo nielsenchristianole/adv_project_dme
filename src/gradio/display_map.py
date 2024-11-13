@@ -7,9 +7,11 @@ import shapely
 import matplotlib as mpl
 from skimage import measure
 from PIL import Image
+from PIL import ImageFont, ImageDraw
 
 from src.gradio.demo_types import Town, RoadGraph, TOWN_TYPES
 from src.gradio.gradio_utils import GetIcon, TownNameSampler
+
 
 
 # what color to use for water
@@ -197,26 +199,51 @@ def plot_map(
 
     # draw the poly_shape on the map
     map_so_far = cv2.drawContours(map_so_far, poly_shape_line, -1, poly_shape_color, poly_shape_pixel_width)
-
-    # ----------------------------------- Towns ---------------------------------- #
-    if return_step >= RETURN_STEP_OPTIONS.towns:
-        scale_factor =  map_so_far.shape[0] / shape.shape[0]
-        # draw the towns on the map
-        map_so_far = Image.fromarray(map_so_far.copy(), mode='RGB').convert('RGBA')
-        for town in towns:
-            icon = ICON_GETTER.get(town['town_type'], towns_pixel_width, COASTAL_TOWN_COLOR if town['is_coastal'] else NON_COASTAL_TOWN_COLOR)
-            icon = Image.fromarray(icon, mode='RGBA')
-            location = (int(scale_factor*town['xyz'][0]) - icon.size[0] // 2, int(scale_factor*town['xyz'][1]) - icon.size[1] // 2)
-            map_so_far.paste(icon, location, mask=icon.split()[3])
-
-        map_so_far = np.array(map_so_far.convert('RGB'))
-
+    scale_factor =  map_so_far.shape[0] / shape.shape[0]
+    
     # ----------------------------------- Roads ---------------------------------- #
     if return_step >= RETURN_STEP_OPTIONS.roads:
         # TODO: smooth the roads
         for _, road in roads['edges'].items():
             map_so_far = cv2.polylines(map_so_far, [(scale_factor*np.array(road['line'].xy)).T.reshape((-1,1,2)).astype(np.int32)], isClosed=False, color=roads_color, thickness=roads_line_width)  
                     
+    # ----------------------------------- Towns ---------------------------------- #
+    if return_step >= RETURN_STEP_OPTIONS.towns:
+        # draw the towns on the map
+        map_so_far = Image.fromarray(map_so_far.copy(), mode='RGB').convert('RGBA')
+        for town in towns:
+            icon = ICON_GETTER.get(town['town_type'], towns_pixel_width, COASTAL_TOWN_COLOR if town['is_coastal'] else NON_COASTAL_TOWN_COLOR)
+            icon = Image.fromarray(icon, mode='RGBA')
+            
+            # Add outline to the icon
+            icon = Image.fromarray(cv2.copyMakeBorder(np.array(icon), 1, 1, 1, 1, cv2.BORDER_CONSTANT, value=(0, 0, 0, 0)), mode='RGBA')
+            
+            # Outline the transparent part of the icon using cv2 canny. Make the outline black
+            outlined = cv2.Canny(np.array(icon)[:,:,3], 0, 1)
+            img = np.array(icon)
+            img[:, :, 3] = img[:,:,3] + (outlined == 255)*255
+            icon = Image.fromarray(img)
+            
+            location = (int(scale_factor*town['xyz'][0]) - icon.size[0] // 2, int(scale_factor*town['xyz'][1]) - icon.size[1] // 2)
+            map_so_far.paste(icon, location, mask=icon.split()[3])
+            
+            # Town names
+            town_name = town['town_name']
+            font = ImageFont.truetype("assets/fonts/Enchanted Land.otf", int(towns_pixel_width * 0.5))
+            draw = ImageDraw.Draw(map_so_far)
+            text_location = (location[0] + icon.size[0] // 2, location[1])
+            draw.text(text_location,
+                      town_name,
+                      font=font,
+                      fill=(255, 255, 255, 255),
+                      anchor='mm',
+                      align='center',
+                      stroke_width=1,
+                      stroke_fill=(0, 0, 0, 255))
+
+        map_so_far = np.array(map_so_far.convert('RGB'))
+        
+        
     return map_so_far
 
 

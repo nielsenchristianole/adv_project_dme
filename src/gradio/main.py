@@ -51,10 +51,17 @@ with gr.Blocks() as demo:
     
     example_data_nr = gr.State(None)
 
+    title = gr.HTML("<h1>Fantasy map generator</h1>")
+    description = gr.HTML("""
+        <p>Generate a fantasy map with islands, towns, and roads.</p>
+        <p>Generate elements in the the order: shape -> heights -> towns -> roads</p>
+        <p>In each iteration process click on the map to manually augment the map.</p>
+    """)
+
     with gr.Row():
 
         # config column
-        with gr.Column():
+        with gr.Column(scale = 2):
             with gr.Row():
                 # ----------------------------- Shape generation ----------------------------- #
                 with gr.Column():
@@ -73,15 +80,16 @@ with gr.Blocks() as demo:
                 # ------------------------------ Town generation ----------------------------- #
                 with gr.Column():
                     with gr.Accordion('Town config', open=False):
-                        with gr.Tab('Random') as town_config_random_tab:
-                            town_config_random_num_town_slider = gr.Slider(value=5, label='Number of Towns to Add', minimum=1, maximum=30, step=1, interactive=True)
-                            @town_config_random_tab.select(outputs=[town_generation_method])
-                            def _(): return 'Random'
-                        with gr.Tab('Custom') as town_config_custom_tab:
-                            town_config_custom_town_type_radio = gr.Radio([(c.capitalize(), c) for c in TOWN_TYPES], value=TOWN_TYPES[0], label='Town Type', interactive=True)
-                            town_config_custom_town_feature_checkboxgroup = gr.CheckboxGroup([('Coastal', 'is_coastal')], label='Town Features')
-                            @town_config_custom_tab.select(outputs=[town_generation_method])
-                            def _(): return 'Custom'
+                        # with gr.Tab('Random') as town_config_random_tab:
+                            # town_config_random_num_town_slider = gr.Slider(value=5, label='Number of Towns to Add', minimum=1, maximum=30, step=1, interactive=True)
+                            # @town_config_random_tab.select(outputs=[town_generation_method])
+                            # def _(): return 'Random'
+                        # with gr.Tab('Custom') as town_config_custom_tab:
+                        town_config_random_num_town_slider = gr.Slider(value=5, label='Number of Towns to Add', minimum=1, maximum=30, step=1, interactive=True)
+                        town_config_custom_town_type_radio = gr.Radio([("Random", "random")] + [(c.capitalize(), c) for c in TOWN_TYPES], value='random', label='Town Type', interactive=True)
+                        town_config_custom_town_feature_radio = gr.Radio([('Random','random'), ('Coastal','coastal'), ('Inland','inland')], value = 'random', label='Town Features', interactive = True)
+                        # @town_config_custom_tab.select(outputs=[town_generation_method])
+                        # def _(): return 'Custom'
                         reset_town_button = gr.Button('Reset Towns')
                     run_generate_town_button = gr.Button('Generate Town(s)')
 
@@ -95,19 +103,23 @@ with gr.Blocks() as demo:
                                 if len(towns) == 0:
                                     gr.Markdown('No towns to connect')
                                 else:
-                                    for town in towns:
+                                    for i, town in enumerate(towns):
                                         # TODO: add checkbox to select town and figure out how dynamic inputs work
                                         # https://www.gradio.app/guides/dynamic-apps-with-render-decorator
                                         # https://www.gradio.app/docs/gradio/checkbox
                                         with gr.Row():
-                                            gr.Checkbox(value=False, label='', interactive=True, show_label=False, container=False, scale=1, min_width=10)
+                                            checkbox = gr.Checkbox(value=False, label='', interactive=True, show_label=False, container=False, scale=1, min_width=100)
                                             text_box = gr.Textbox(value=town['town_name'], lines=1, max_lines=1, interactive=True, show_label=False, container=False, scale=5)
-                                            gr.ClearButton(text_box, value=None, size='sm', icon=CLOSE_ICON, scale=1, min_width=10)
+
+                                            # towns_state[i]['town_name'] = text_box.value
+                                            # towns_state[i]['connect'] = checkbox.value
+                                            #gr.ClearButton(text_box, value=None, size='sm', icon=CLOSE_ICON, scale=1, min_width=10)
                         reset_roads_button = gr.Button('Reset Roads')
                         
-                        road_config_road_cost = gr.Number(1, label='Road Cost')
-                        road_config_slope_factor = gr.Number(1, label='Max Slope Cost Factor')
-                        road_config_bridge_factor = gr.Number(10, label='Bridge Cost Factor')
+                        with gr.Accordion('Road Cost Config', open=False):
+                            road_config_road_cost = gr.Number(1, label='Road Cost')
+                            road_config_slope_factor = gr.Number(1, label='Max Slope Cost Factor')
+                            road_config_bridge_factor = gr.Number(100, label='Bridge Cost Factor')
                     run_generate_road_button = gr.Button('Generate Road')
             # --------------------------- Polygon shape change --------------------------- #
             with gr.Accordion('Shape Editor    (Warning! Will change height and reset towns+roads)'):
@@ -120,7 +132,7 @@ with gr.Blocks() as demo:
                     poly_regen_area_btn = gr.Button('Regenerate Area')
                     
         # -------------------------------- Display map ------------------------------- #
-        with gr.Column():
+        with gr.Column(scale = 3):
             with gr.Tab('Map'):
                 output_image = gr.Image(
                     value=plot_map(return_step='empty'),
@@ -385,10 +397,10 @@ with gr.Blocks() as demo:
             towns_state,
             roads_state,
             town_name_sampler,
-            town_generation_method,
+            # town_generation_method,
             town_config_random_num_town_slider,
             town_config_custom_town_type_radio,
-            town_config_custom_town_feature_checkboxgroup],
+            town_config_custom_town_feature_radio],
         outputs=[
             towns_state,
             town_name_sampler,
@@ -400,7 +412,7 @@ with gr.Blocks() as demo:
         towns: List[dict],
         roads: RoadGraph,
         name_sampler: TownNameSampler,
-        generation_method: Literal['Random', 'Custom'],
+        # generation_method: Literal['Random', 'Custom'],
         num_towns: int,
         town_type: TOWN_TYPE,
         town_config: List[str]
@@ -411,30 +423,43 @@ with gr.Blocks() as demo:
         if height_map is None:
             height_map = generate_height_map
 
-        if generation_method == 'Random':
-            for _ in range(num_towns):
-                idx = np.random.choice(num_possible)
-                z = height_map[possible_choices[0][idx], possible_choices[1][idx]]
-                is_coastal = np.random.choice([True, False])
-                town_type = np.random.choice(TOWN_TYPES)
+        # if generation_method == 'Random':
+            # for _ in range(num_towns):
+            #     idx = np.random.choice(num_possible)
+            #     z = height_map[possible_choices[0][idx], possible_choices[1][idx]]
+            #     is_coastal = np.random.choice([True, False])
+            #     town_type = np.random.choice(TOWN_TYPES)
                 
-                towns.append(
-                    Town(
-                        town_type=town_type,
-                        is_coastal=is_coastal,
-                        xyz=[possible_choices[1][idx], possible_choices[0][idx], z],
-                        town_name=name_sampler.pop(town_type, is_coastal)))
+            #     towns.append(
+            #         Town(
+            #             town_type=town_type,
+            #             is_coastal=is_coastal,
+            #             xyz=[possible_choices[1][idx], possible_choices[0][idx], z],
+            #             town_name=name_sampler.pop(town_type, is_coastal)))
 
-        elif generation_method == 'Custom':
+        # elif generation_method == 'Custom':
             # import pdb; pdb.set_trace()
             # is_coastal = 'is_coastal' in town_config
             # idx = np.random.choice(num_possible)
             # z = height_map[possible_choices[0][idx], possible_choices[1][idx]]
-            new_types = [town_type] * 10
-            new_is_coastals = ['is_coastal' in town_config] * 10
-            new_names = [name_sampler.pop(town_type, is_coastal) for town_type, is_coastal in zip(new_types, new_is_coastals)]
             
-            towns = town_generator.generate(height_map, towns, new_names, new_types, new_is_coastals)
+        if town_type == 'random':
+            town_types = np.random.choice(TOWN_TYPES, num_towns, replace=True)
+        else:
+            town_types = [town_type] * num_towns
+        
+        if 'random' in town_config:
+            is_coastals = np.random.choice([True, False], num_towns, replace=True)
+        elif 'coastal' in town_config:
+            is_coastals = [True] * num_towns
+        else:
+            is_coastals = [False] * num_towns
+            
+        # new_types = [town_type] * 10
+        # new_is_coastals = ['is_coastal' in town_config] * 10
+        new_names = [name_sampler.pop(town_type, is_coastal) for town_type, is_coastal in zip(town_types, is_coastals)]
+        
+        towns = town_generator.generate(height_map, towns, new_names, town_types, is_coastals)
             # towns.append(
             #     Town(
             #         town_type = town_type,
@@ -471,7 +496,8 @@ with gr.Blocks() as demo:
         # Generate RoadGraph for everythiiiiing #TODO: Use the road_config to config which towns to connect
         nodes = {}
         for town in towns:
-            nodes[town['town_name']] = RoadNode(is_city=True, xyz=town['xyz'])
+            if town["connect"]:
+                nodes[town['town_name']] = RoadNode(is_city=True, xyz=town['xyz'])
         
         heuristic = BridgeEuclideanHeuristic(height_map, 
                                              0.5,  

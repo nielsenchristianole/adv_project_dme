@@ -74,7 +74,7 @@ class BridgeEuclideanHeuristic(Heuristic):
         cur_height = self.heightmap_km[state[1], state[0]]
         
         # if bridge
-        if goal_height < 0 or cur_height < 0:
+        if goal_height <= 0 or cur_height <= 0:
             return np.sqrt(dx**2 + dy**2) * self.cost_per_km * self.bridge_cost_factor
             
         else:
