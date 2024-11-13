@@ -51,50 +51,51 @@ with gr.Blocks() as demo:
     
     example_data_nr = gr.State(None)
 
-    title = gr.HTML("<h1>Fantasy map generator</h1>")
-    description = gr.HTML("""
-        <p>Generate a fantasy map with islands, towns, and roads.</p>
-        <p>Generate elements in the the order: shape -> heights -> towns -> roads</p>
-        <p>In each iteration process click on the map to manually augment the map.</p>
-    """)
-
+    
     with gr.Row():
 
         # config column
         with gr.Column(scale = 2):
+            title = gr.HTML("<h1>Fantasy map generator</h1>")
             with gr.Row():
                 # ----------------------------- Shape generation ----------------------------- #
                 with gr.Column():
-                    with gr.Accordion('Shape config', open=False):
+                    run_generate_shape_button = gr.Button('Generate map outline')
+                    with gr.Accordion('Advanced outline config', open=False):
                         shape_size_slider = gr.Slider(value=0.5, label='Island Size', minimum=0.0, maximum=1.0, step=0.01, interactive=True)
                         shape_quality_slider = gr.Slider(value=1.0, label='Generation Speed(0) vs Quality(1)', minimum=0.0, maximum=1.0, step=0.01, interactive=True)
-                    run_generate_shape_button = gr.Button('Generate Shape')
                 
                 # --------------------------- Height map generation -------------------------- #
                 
                 with gr.Column():
-                    with gr.Accordion('Height Map config', open=False):
-                        height_quality_slider = gr.Slider(value=1.0, label='Generation Speed(0) vs Quality(1)', minimum=0.0, maximum=1.0, step=0.01, interactive=True)
                     run_generate_height_map_button = gr.Button('Generate Height Map')
+                    with gr.Accordion('Advanced height map config', open=True):
+                        height_quality_slider = gr.Slider(value=1.0, label='Generation Speed(0) vs Quality(1)', minimum=0.0, maximum=1.0, step=0.01, interactive=True)
 
                 # ------------------------------ Town generation ----------------------------- #
                 with gr.Column():
-                    with gr.Accordion('Town config', open=False):
+                    with gr.Row():
+                        run_generate_town_button = gr.Button('Generate Town(s)', scale = 3)
+                        reset_town_button = gr.Button('Remove all Towns', scale=2, variant='secondary')
+                    with gr.Accordion('Town config', open=True):
                         # with gr.Tab('Random') as town_config_random_tab:
                             # town_config_random_num_town_slider = gr.Slider(value=5, label='Number of Towns to Add', minimum=1, maximum=30, step=1, interactive=True)
                             # @town_config_random_tab.select(outputs=[town_generation_method])
                             # def _(): return 'Random'
                         # with gr.Tab('Custom') as town_config_custom_tab:
                         town_config_random_num_town_slider = gr.Slider(value=5, label='Number of Towns to Add', minimum=1, maximum=30, step=1, interactive=True)
-                        town_config_custom_town_type_radio = gr.Radio([("Random", "random")] + [(c.capitalize(), c) for c in TOWN_TYPES], value='random', label='Town Type', interactive=True)
-                        town_config_custom_town_feature_radio = gr.Radio([('Random','random'), ('Coastal','coastal'), ('Inland','inland')], value = 'random', label='Town Features', interactive = True)
+                        
+                        with gr.Row():
+                            town_config_custom_town_type_radio = gr.Radio([("Random", "random")] + [(c.capitalize(), c) for c in TOWN_TYPES], value='random', label='Town Type', interactive=True)
+                            town_config_custom_town_feature_radio = gr.Radio([('Random','random'), ('Coastal','coastal'), ('Inland','inland')], value = 'random', label='Town Features', interactive = True)
                         # @town_config_custom_tab.select(outputs=[town_generation_method])
                         # def _(): return 'Custom'
-                        reset_town_button = gr.Button('Reset Towns')
-                    run_generate_town_button = gr.Button('Generate Town(s)')
 
                 # ------------------------------ Road generation ----------------------------- #
                 with gr.Column():
+                    with gr.Row():
+                        run_generate_road_button = gr.Button('Connect towns with roads', scale = 3)
+                        reset_roads_button = gr.Button('Remove all roads', scale = 2)
                     with gr.Accordion('Road config', open=False):
                         # which towns to connect
                         with gr.Accordion('Towns to connect'):
@@ -108,29 +109,19 @@ with gr.Blocks() as demo:
                                         # https://www.gradio.app/guides/dynamic-apps-with-render-decorator
                                         # https://www.gradio.app/docs/gradio/checkbox
                                         with gr.Row():
-                                            checkbox = gr.Checkbox(value=False, label='', interactive=True, show_label=False, container=False, scale=1, min_width=100)
+                                            checkbox = gr.Checkbox(value=False, label='', interactive=True, show_label=False, container=False, scale=1, min_width=1000)
                                             text_box = gr.Textbox(value=town['town_name'], lines=1, max_lines=1, interactive=True, show_label=False, container=False, scale=5)
 
                                             # towns_state[i]['town_name'] = text_box.value
                                             # towns_state[i]['connect'] = checkbox.value
                                             #gr.ClearButton(text_box, value=None, size='sm', icon=CLOSE_ICON, scale=1, min_width=10)
-                        reset_roads_button = gr.Button('Reset Roads')
                         
-                        with gr.Accordion('Road Cost Config', open=False):
+                        
+                        with gr.Accordion('Advanced road heuristic config', open=False):
                             road_config_road_cost = gr.Number(1, label='Road Cost')
-                            road_config_slope_factor = gr.Number(1, label='Max Slope Cost Factor')
+                            road_config_slope_factor = gr.Number(10, label='Max Slope Cost Factor')
                             road_config_bridge_factor = gr.Number(100, label='Bridge Cost Factor')
-                    run_generate_road_button = gr.Button('Generate Road')
-            # --------------------------- Polygon shape change --------------------------- #
-            with gr.Accordion('Shape Editor    (Warning! Will change height and reset towns+roads)'):
-                with gr.Row():                  
-                    close_btn = gr.Button('Close Polygon') # Changes to Open Polygon when closed
-                    clear_btn = gr.Button('Clear Points')
-                with gr.Row():
-                    poly_add_land_btn = gr.Button('Add Land')
-                    poly_add_sea_btn = gr.Button('Add Sea')
-                    poly_regen_area_btn = gr.Button('Regenerate Area')
-                    
+                                        
         # -------------------------------- Display map ------------------------------- #
         with gr.Column(scale = 3):
             with gr.Tab('Map'):
@@ -151,6 +142,30 @@ with gr.Blocks() as demo:
                     )
                 generate_mesh_button = gr.Button('Generate 3D Mesh')
                 gr.DownloadButton('Download 3D Mesh')
+        
+        # --------------------------- Polygon shape change --------------------------- #
+            # with gr.Accordion("",open=True):
+            gr.HTML("<H2>Custom editor</H2><p>Click on the map to edit the landscape</p>")
+            with gr.Tab('Outline editor'):
+                gr.HTML("<p> Click to draw an area that should be changed\n WARNING! This will remove any existing towns and roads</p>")
+                with gr.Row():                  
+                    close_btn = gr.Button('Close Polygon') # Changes to Open Polygon when closed
+                    clear_btn = gr.Button('Clear Points')
+                with gr.Row():
+                    poly_add_land_btn = gr.Button('Fill with land')
+                    poly_add_sea_btn = gr.Button('Fill with water')
+                    poly_regen_area_btn = gr.Button('Generative infill')
+            with gr.Tab("Height map editor"):
+                gr.HTML("<p> Click to draw an area that should be changed\n WARNING! This will remove any existing towns and roads</p>")
+                # with gr.Row():                  
+                #     close_btn = gr.Button('Close Polygon') # Changes to Open Polygon when closed
+                #     clear_btn = gr.Button('Clear Points')
+                # with gr.Row():
+                #     poly_add_land_btn = gr.Button('Add Land')
+                #     poly_add_sea_btn = gr.Button('Add Sea')
+                #     poly_regen_area_btn = gr.Button('Generative infill')
+            with gr.Tab("Town editor"):
+                gr.HTML("<p>Feature is not yet implemented</p>")
     
     # ---------------------------------------------------------------------------- #
     #                                     utils                                    #
@@ -253,6 +268,7 @@ with gr.Blocks() as demo:
                           high_res_image: np.ndarray, 
                           display_image: np.ndarray,
                           mode: Literal['add', 'subtract']):
+        print("called")
         if not poly_closed:
             gr.Warning('Polygon is not closed, please close the polygon first!')
             return shape_mask, height_map, towns, roads, poly_points, poly_closed, high_res_image, display_image
