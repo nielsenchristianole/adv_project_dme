@@ -42,7 +42,7 @@ def get_model(model_params : NameSpace) -> nn.Module:
     model = import_target(model_params.target)
     return model(**vars(model_params.params))
 
-def get_wrapped_model(model : nn.Module, wrapped_params : NameSpace) -> nn.Module:
+def get_inference_model(model : nn.Module, wrapped_params : NameSpace) -> nn.Module:
     wrapped = import_target(wrapped_params.target)
     return wrapped(model, **vars(wrapped_params.params))
 

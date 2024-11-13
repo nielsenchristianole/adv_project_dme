@@ -8,6 +8,7 @@ from CityGeneration.conditional_sampler import ConditionalSampler
 
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C
+from skimage.morphology import binary_dilation
 
 import yaml
 import shapely
@@ -35,31 +36,106 @@ class TownGenerator:
         
         self.model = get_inference_model(checkpoint_path, params, model_params)
 
-        kernel = RBF(5, (1e-10, 1e6))
+        kernel = RBF(5, (1e-10, 1e6)) * C(1.0, (1e-10, 1e6))
         self.gp = GaussianProcessRegressor(kernel=kernel, 
-                                      optimizer = None,
-                                      alpha=1e-6, n_restarts_optimizer=0)
+                                           optimizer = None,
+                                           alpha=1e-6,
+                                           n_restarts_optimizer=0)
+
+    def get_masks(self, height_map: np.ndarray, width = 3):
+        
+        mask = height_map <= 0
+        dilated = mask.copy()
+        for _ in range(width):
+            dilated = binary_dilation(dilated, footprint = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]]))
+                
+        coastal = mask != dilated
+        non_coastal = (1 - mask) ^ coastal
+        return mask, coastal, non_coastal
 
     def generate(self,
-                 shape: shapely.MultiPolygon,
                  height_map: np.ndarray,
                  towns: List[Town],
-                 num_towns: int) -> dict:
+                 names,
+                 types,
+                 is_coastal,
+                 repel = 0.5) -> dict:
+        """
+        Generates towns on a height map.
+        The heightmap is expected to be of shape (128, 128). If not it will automatically be resized.
+        
+        Args:
+         - height_map: np.ndarray, shape=(128, 128)
+            The height map to generate towns on.
+         - towns: List[Town]
+            A list of existing towns
+         - names: List[str]
+            The names of the new towns
+         - types: List[str]
+            The types of the new towns
+         - is_coastal: List[bool]
+            Whether the new towns are coastal or not.
+        """
+        
+        assert len(names) == len(types) == len(is_coastal), "Names, types and is_coastal must have the same length."
+        
+        original_shape = height_map.shape
+        
+        assert original_shape[0] == original_shape[1], "Height map must be square."
+        
+        towns_xyz = np.array([town["xyz"] for town in towns])
+
+        if original_shape != (128, 128):
+            height_map = resize(height_map, (128, 128))
+            
+            if len(towns_xyz) > 0:
+                towns_xyz[:, 0] = towns_xyz[:, 0] * 128 / original_shape[0]
+                towns_xyz[:, 1] = towns_xyz[:, 1] * 128 / original_shape[1]
+        
+        mask, coastal, non_coastal = self.get_masks(height_map)
+        height_map[mask] = 0
         
         heatmap = self.model(height_map)
         heatmap = heatmap.detach().cpu().numpy().squeeze().squeeze()
-        heatmap[height_map == 0] = 0
         
-        self.sampler = ConditionalSampler(self.gp, 
-                                          heatmap,
-                                          repel = 0.5)
+        new_towns = []
         
-        self.sampler.reset()
-        for town in towns:
-            self.sampler.X_sampled = np.vstack([self.sampler.X_sampled, town.xyz[:2]])
-            self.sampler.y_sampled = np.vstack([self.sampler.y_sampled, town.xyz[2]])
-        
-        self.sampler.sample(num_towns)
+        if len(towns_xyz) > 0:
+            X_sampled = towns_xyz[:, :2]
+            y_sampled = towns_xyz[:, 2].reshape(-1, 1)
+        else:
+            X_sampled = np.empty((0, 2))
+            y_sampled = np.empty((0, 1))
+            
+        for i in range(len(names)):
+            
+            if is_coastal[i] == True:
+                prior = heatmap * coastal
+            else:
+                prior = heatmap * non_coastal    
+            prior = prior / prior.sum()
+            
+            self.sampler = ConditionalSampler(self.gp, prior, repel = repel)
+            self.sampler.X_sampled = X_sampled
+            self.sampler.y_sampled = y_sampled
+            
+            self.sampler.sample(1)
+            
+            xyz = np.hstack([self.sampler.X_sampled[-1], self.sampler.y_sampled[-1]])
+            
+            X_sampled = np.vstack([X_sampled, xyz[:2]])
+            y_sampled = np.vstack([y_sampled, xyz[2]])
+            
+            if original_shape != (128, 128):
+                xyz[0] = xyz[0] * original_shape[0] / 128
+                xyz[1] = xyz[1] * original_shape[1] / 128
+            
+            new_towns.append(Town(town_type=types[i],
+                            is_coastal=is_coastal[i],
+                            xyz=xyz,
+                            town_name=names[i]))
+                
+        return towns + new_towns
     
 
 if __name__ == "__main__":

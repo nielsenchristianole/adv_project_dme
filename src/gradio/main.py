@@ -9,6 +9,8 @@ from src.gradio.display_map import plot_map
 from src.gradio.gradio_utils import TownNameSampler
 from src.gradio.gradio_configs import CLOSE_ICON
 
+from src.gradio.town_generator import TownGenerator
+
 
 with gr.Blocks() as demo:
 
@@ -16,6 +18,11 @@ with gr.Blocks() as demo:
     town_name_sampler = gr.State(TownNameSampler)
     # state to keep track of the generation method
     town_generation_method = gr.State('Random')
+    
+    # Town generator object
+    town_generator = TownGenerator(config_path = "out/city_gen/config.yaml",
+                                   model_config_path="out/city_gen/model_config.yaml",
+                                   checkpoint_path="out/city_gen/checkpoint.ckpt")
 
     # current states
     shape_state = gr.State(None)
@@ -212,15 +219,20 @@ with gr.Blocks() as demo:
 
         elif generation_method == 'Custom':
             # import pdb; pdb.set_trace()
-            is_coastal = 'is_coastal' in town_config
-            idx = np.random.choice(num_possible)
-            z = height_map[possible_choices[0][idx], possible_choices[1][idx]]
-            towns.append(
-                Town(
-                    town_type = town_type,
-                    is_coastal = is_coastal,
-                    xyz = [possible_choices[1][idx], possible_choices[0][idx], z],
-                    town_name = name_sampler.pop(town_type, is_coastal)))
+            # is_coastal = 'is_coastal' in town_config
+            # idx = np.random.choice(num_possible)
+            # z = height_map[possible_choices[0][idx], possible_choices[1][idx]]
+            new_types = [town_type] * 10
+            new_is_coastals = ['is_coastal' in town_config] * 10
+            new_names = [name_sampler.pop(town_type, is_coastal) for town_type, is_coastal in zip(new_types, new_is_coastals)]
+            
+            towns = town_generator.generate(height_map, towns, new_names, new_types, new_is_coastals)
+            # towns.append(
+            #     Town(
+            #         town_type = town_type,
+            #         is_coastal = is_coastal,
+            #         xyz = [possible_choices[1][idx], possible_choices[0][idx], z],
+            #         town_name = name_sampler.pop(town_type, is_coastal)))
         
         chart = plot_map(shape, height_map, towns, roads, return_step='roads' if roads['edges'] else 'towns')
 

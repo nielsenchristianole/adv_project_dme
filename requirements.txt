@@ -3,7 +3,7 @@ numpy
 matplotlib
 pandas
 geopandas
-netCDF4
+#netCDF4
 tyro
 requests
 gradio
@@ -12,3 +12,10 @@ torch
 torchvision
 torchaudio
 labml-nn
+
+gradio
+scikit-learn
+trimesh
+opencv-python
+lightning
+pytorch_optimizer
