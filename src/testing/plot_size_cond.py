@@ -50,6 +50,7 @@ plt.ylabel('Density')
 plt.savefig(out_dir / f'size_dist.{out_ext}', **fig_kwargs)
 if show_plots:
     plt.show()
+plt.clf()
 
 
 
@@ -88,3 +89,4 @@ plt.ylabel('Actual size')
 plt.savefig(out_dir / f'size_cond.{out_ext}', **fig_kwargs)
 if show_plots:
     plt.show()
+plt.clf()

@@ -45,9 +45,6 @@ def dist_matrix(
     y: np.ndarray,
     dist_fn: Callable[[np.ndarray, np.ndarray], float]
 ) -> np.ndarray:
-    """
-    x and y are np.ndarrays
-    """
 
     dist = np.empty((len(x), len(y)))
     for i, x_i in enumerate(x):
@@ -70,10 +67,36 @@ def calculate_stats(samples: np.ndarray, targets: np.ndarray, dist_func: Callabl
 
     sample_target_dist = dist_matrix(samples, targets, dist_func)
     sample_sample_dist = dist_matrix(samples, samples, dist_func)
+    target_target_dist = dist_matrix(targets, targets, dist_func)
+    target_sample_dist = sample_target_dist[:num_target - 1].T
 
     mmd = sample_target_dist.min(axis=1)[:num_target].mean()
     coverage = len(np.unique(sample_target_dist.argmin(axis=1)[:num_target])) / num_target
-    one_nnA = (sample_target_dist.min(axis=1)[:num_target + 1] < remove_diag(sample_sample_dist[:num_target + 1, :num_target + 1]).min(axis=1)).mean()
+
+    # for sample classification
+    extra_nn_dist = sample_target_dist.min(axis=1)[:num_target + 1]
+    intra_nn_dist = remove_diag(sample_sample_dist[:num_target + 1, :num_target + 1]).min(axis=1)
+    one_nnA_sample = (extra_nn_dist < intra_nn_dist).sum() + 0.5 * (extra_nn_dist == intra_nn_dist).sum()
+
+    # for target classification
+    extra_nn_dist = target_sample_dist.min(axis=1)[:num_target]
+    intra_nn_dist = remove_diag(target_target_dist).min(axis=1)
+    one_nnA_target = (extra_nn_dist < intra_nn_dist).sum() + 0.5 * (extra_nn_dist == intra_nn_dist).sum()
+
+    one_nnA = (one_nnA_sample + one_nnA_target) / (2 * num_target + 1)
+
+    if False:
+        extra_cov = sample_target_dist[:num_target + 1].argmin(axis=1)
+        intra_cov = remove_diag(sample_sample_dist[:num_target + 1, :num_target + 1]).argmin(axis=1)
+        intra_cov += (intra_cov >= np.arange(num_target + 1))
+        closest_match = np.where((extra_nn_dist < intra_nn_dist)[:, None, None], targets[extra_cov], samples[intra_cov])
+
+        import matplotlib.pyplot as plt
+        idx = 0
+        fig, axs = plt.subplots(2, 1, figsize=(4, 8))
+        axs[0].imshow(samples[idx])
+        axs[1].imshow(closest_match[idx])
+
 
     return mmd, coverage, one_nnA
 
