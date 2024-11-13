@@ -110,13 +110,13 @@ class ShapeData(Dataset):
         cv2.fillPoly(im, pts=[(points + self.im_size / 2)[:, None].astype(int)], color=255)
         return torch.tensor(im[None], dtype=self.dtype)
 
-    def __getitem__(self, idx) -> dict:
+    def __getitem__(self, idx: int, *, mirror: Optional[bool]=None, angle: Optional[bool]=None) -> dict:
         contour = self.contours[idx]
 
         if self.augment:
-            if np.random.rand() > 0.5:
+            if mirror or ((mirror is None) and (np.random.rand() >= 0.5)):
                 contour = self.mirror(contour)
-            angle = np.random.uniform(0, 2 * np.pi)
+            angle = angle if angle is not None else np.random.uniform(0, 2 * np.pi)
         else:
             angle = 0.
         contour = self.rotate(contour, angle)
