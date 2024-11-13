@@ -3,6 +3,7 @@ from skimage import measure
 import trimesh
 
 def heightmap_to_3d_mesh(heightmap, output_path="terrain_mesh.obj", max_GB_mem=0.5, km_per_pix=0.5):
+    """heightmap to mesh, assumes heigtmap is in meters"""
     # Normalize the heightmap to form a volume where the z-axis represents the height
     heightmap = np.where(heightmap < 0, 0, heightmap) # Filter out ocean and sea
     max_memory_bytes = max_GB_mem * 1024 ** 3 
@@ -15,7 +16,7 @@ def heightmap_to_3d_mesh(heightmap, output_path="terrain_mesh.obj", max_GB_mem=0
     
     # Check if z_levels exceed the max height
     if z_levels > max_height:
-        z_levels = max_height  # If there are more z_levels than max height, then just set it equal
+        z_levels = int(max_height)  # If there are more z_levels than max height, then just set it equal
 
     # Create a 3D volume: stack multiple layers of the height map along the z-axis
     volume = np.zeros((x_size, y_size, z_levels), dtype=np.uint8)
