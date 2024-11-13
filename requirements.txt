@@ -7,8 +7,12 @@ netCDF4
 tyro
 requests
 gradio
+gradio-image-prompter
 scikit-image
+trimesh
+scikit-learn
 torch
 torchvision
 torchaudio
 labml-nn
+opencv-python

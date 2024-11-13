@@ -26,48 +26,49 @@ NON_COASTAL_TOWN_COLOR = np.array([255, 255, 255])
 ICON_GETTER = GetIcon()
 class RETURN_STEP_OPTIONS(IntEnum):
     empty = 0
-    poly_shape = 1
-    height_map = 2
-    towns = 3
-    roads = 4
-    change_poly_shape = 5
+    change_poly_shape = 1
+    shape = 2
+    height_map = 3
+    towns = 4
+    roads = 5
 
-
+# TODO: A lot of this can be cached
 def plot_map(
     shape: Optional[np.ndarray]=None, # Binary image of the shape of the map
     height_map: Optional[np.ndarray]=None,
     towns: Optional[List[Town]]=None,
     roads: Optional[RoadGraph]=None,
-    return_step: Literal['empty', 'shape', 'height_map', 'towns', 'roads', 'change_poly_shape']='roads',
+    current_map: Optional[np.ndarray]=None,
+    return_step: Literal['empty', 'change_poly_shape', 'shape', 'height_map', 'towns', 'roads']='roads',
     *,
     polygon_dict: Optional[dict]=None,
-    resolution: Optional[int]=None,
+    resolution: Optional[int]=2000,
     max_height: Optional[float]=None,
     num_contour_levels: int=4,
     contour_pixel_width: int=3,
     contour_color: Tuple[int,int,int]=(170,170,170),
     min_contour_length: int=10,
     poly_shape_pixel_width: int=10,
-    poly_shape_color: Tuple[int,int,int]=(0,0,0),
+    poly_shape_color: Tuple[int,int,int]=(50,50,50),
     contour_is_probably_not_closed_threshold: Optional[float]=None,
     towns_pixel_width: Optional[int]=None,
+    roads_line_width: int=15,
+    roads_color: Tuple[int,int,int]=(90,90,90),
+    polygon_color: Tuple[int,int,int]=(0,255,0),
+    polygon_line_width: int=5,
+    polygon_point_size: int=10
 ):
     """
     Get an array which is the map of the town
-    """
-    
-    poly_shape = list(np.load('assets/defaults/shape.npz').values())
-    
+    """    
     return_step = RETURN_STEP_OPTIONS[return_step]
 
     # fix resolution param
     if resolution is None:
         if height_map is not None:
             resolution = max(height_map.shape[:2])
-        elif poly_shape is not None:
-            resolution = poly_shape.bounds[2:] if isinstance(poly_shape, shapely.MultiPolygon) else np.ceil(np.array([np.max(s, axis=0).squeeze(0) for s in poly_shape]).max(axis=0)).astype(int)[::-1]
-            map_so_far = np.full((*resolution, 3), 255, dtype=np.uint8)
-            resolution = max(resolution).item()
+        elif shape is not None:
+            resolution = max(shape.shape[:2])
         else:
             resolution = 2000
 
@@ -82,16 +83,8 @@ def plot_map(
         towns_pixel_width = resolution // 20
         
     # --------------------------- Change Shape by Poly --------------------------- #
-    if return_step == RETURN_STEP_OPTIONS.change_poly_shape and polygon_dict:
-        out_resolution = (
-            int(resolution * shape.shape[0] / max(shape.shape[:2])),
-            int(resolution * shape.shape[1] / max(shape.shape[:2])))
-        shape = cv2.resize(shape, out_resolution[::-1], interpolation=cv2.INTER_NEAREST)
-        sea_mask = shape == 0
-        
-        map_so_far = np.empty((*shape.shape, 3), dtype=np.uint8)
-        map_so_far[sea_mask] = WATER_COLOR
-        map_so_far[~sea_mask] = TERRAIN_COLORMAP[0]
+    if return_step == RETURN_STEP_OPTIONS.change_poly_shape and polygon_dict and current_map is not None:
+        map_so_far = current_map.copy()
         
         # Draw User Polygon
         poly_points = polygon_dict['poly_points']
@@ -102,26 +95,46 @@ def plot_map(
             for i in range(len(poly_points) - 1):
                 start_point = (int(poly_points[i][0]), int(poly_points[i][1]))
                 end_point = (int(poly_points[i + 1][0]), int(poly_points[i + 1][1]))
-                cv2.line(map_so_far, start_point, end_point, color=(0, 255, 0), thickness=2)
+                cv2.line(map_so_far, start_point, end_point, color=polygon_color, thickness=polygon_line_width)
                 
             if poly_closed:
                 # Draw a line between the last point and the first point to close the polygon
                 if len(poly_points) > 1:
                     start_point = (int(poly_points[-1][0]), int(poly_points[-1][1]))
                     end_point = (int(poly_points[0][0]), int(poly_points[0][1]))
-                    cv2.line(map_so_far, start_point, end_point, color=(0, 255, 0), thickness=2)
+                    cv2.line(map_so_far, start_point, end_point, color=polygon_color, thickness=polygon_line_width)
                 # Draw a transparent polygon
                 poly_points_np = np.array(poly_points, dtype=np.int32)
                 overlay = map_so_far.copy()
-                cv2.fillPoly(overlay, [poly_points_np], color=(0, 255, 0, 128))  # RGBA color with transparency
+                cv2.fillPoly(overlay, [poly_points_np], color=(polygon_color[0], polygon_color[1], polygon_color[2], 128))  # RGBA color with transparency
                 map_so_far = cv2.addWeighted(overlay, 0.5, map_so_far, 0.5, 0)
             else:
                 # Draw points
                 for point in poly_points:
-                    cv2.circle(map_so_far, (int(point[0]), int(point[1])), radius=5, color=(0, 255, 0), thickness=-1)
-        
+                    cv2.circle(map_so_far, (int(point[0]), int(point[1])), radius=polygon_point_size, color=polygon_color, thickness=-1)
         return map_so_far
-
+                    
+    # ------------------------------ Shape of the map ----------------------------- #
+    if return_step >= RETURN_STEP_OPTIONS.shape:
+        out_resolution = (
+            int(resolution * shape.shape[0] / max(shape.shape[:2])),
+            int(resolution * shape.shape[1] / max(shape.shape[:2])))
+        scaled_shape = cv2.resize(shape, out_resolution[::-1], interpolation=cv2.INTER_LINEAR)
+        shape_sea_mask = scaled_shape == 0
+        
+        map_so_far = np.empty((*scaled_shape.shape, 3), dtype=np.uint8)
+        map_so_far[shape_sea_mask] = WATER_COLOR
+        map_so_far[~shape_sea_mask] = TERRAIN_COLORMAP[0]
+        
+        shape_outline = measure.find_contours(scaled_shape, level=0.5)
+        polygons = []
+        for contour in shape_outline:
+            contour_points = [(point[0], point[1]) for point in contour]
+            polygon = shapely.Polygon(contour_points)
+            if polygon.is_valid:
+                polygons.append(polygon)
+        poly_shape = shapely.MultiPolygon(polygons)
+        
     # -------------------------------- Height map -------------------------------- #
     if return_step >= RETURN_STEP_OPTIONS.height_map:
 
@@ -130,6 +143,7 @@ def plot_map(
 
         # height map for use
         simple_height_map_non_clipped = height_map.copy().astype(np.float32)
+        simple_height_map_non_clipped[shape == 0] = -1
         out_resolution = (
             int(resolution * height_map.shape[0] / max(height_map.shape[:2])),
             int(resolution * height_map.shape[1] / max(height_map.shape[:2])))
@@ -137,19 +151,23 @@ def plot_map(
         simple_height_map = np.clip(simple_height_map_non_clipped, a_min=0, a_max=None)
 
         # where to draw sea
-        sea_mask = simple_height_map <= 0
+        height_sea_mask = simple_height_map <= 0
 
         # color the map
         map_color = np.empty((*out_resolution, 3), dtype=np.uint8)
         for i in range(3):
             colormapped = cv2.applyColorMap((simple_height_map * (255 / max_height)).astype(np.uint8), TERRAIN_COLORMAP[:, i])
             map_color[..., i] = colormapped
-        map_color[sea_mask] = WATER_COLOR
+
+        map_color[height_sea_mask] = WATER_COLOR
+        # Where the heightmap is negative but the shape is land, make it terrain color
+        shape_mask = np.round(scaled_shape).astype(np.uint8)        
+        map_color[np.where(shape_mask & height_sea_mask)] = TERRAIN_COLORMAP[0]
 
         # draw contours on the map
         map_so_far = map_color.copy()
         # contour_levels = np.linspace(0, simple_height_map.max(), num_contours+2)[1:-1]
-        contour_levels = np.quantile(simple_height_map[~sea_mask], np.linspace(0, 1, num_contour_levels+2)[1:-1])
+        contour_levels = np.quantile(simple_height_map[~height_sea_mask], np.linspace(0, 1, num_contour_levels+2)[1:-1])
         contours = list()
         for level in contour_levels:
             _conts = measure.find_contours(simple_height_map, level=level)
@@ -162,12 +180,12 @@ def plot_map(
     # ------------------------ Contours and polyline shape ----------------------- #
     if isinstance(poly_shape, shapely.MultiPolygon):
         poly_shape_line = list()
-        for pol in poly_shape:
+        for pol in poly_shape.geoms:
             poly_shape_line.append(list(pol.exterior.coords))
             for interior in pol.interiors:
                 poly_shape_line.append(list(interior.coords))
         poly_shape_line = [np.array(s, dtype=np.int32)[:,None,::-1] for s in poly_shape_line]
-    if (poly_shape is None) and (return_step >= RETURN_STEP_OPTIONS.height_map):
+    elif (poly_shape is None) and (return_step >= RETURN_STEP_OPTIONS.height_map):
         poly_shape_line = measure.find_contours(simple_height_map_non_clipped, level=0)
         poly_shape_line = [s[:,None,::-1].astype(np.int32) for s in poly_shape_line if s.shape[0] > 3]
         poly_shape_line = [np.concatenate((s,s[::-1]), axis=0) if np.linalg.norm(s[0] - s[-1]) > contour_is_probably_not_closed_threshold else s for s in poly_shape_line]
@@ -182,20 +200,23 @@ def plot_map(
 
     # ----------------------------------- Towns ---------------------------------- #
     if return_step >= RETURN_STEP_OPTIONS.towns:
+        scale_factor =  map_so_far.shape[0] / shape.shape[0]
         # draw the towns on the map
         map_so_far = Image.fromarray(map_so_far.copy(), mode='RGB').convert('RGBA')
         for town in towns:
             icon = ICON_GETTER.get(town['town_type'], towns_pixel_width, COASTAL_TOWN_COLOR if town['is_coastal'] else NON_COASTAL_TOWN_COLOR)
             icon = Image.fromarray(icon, mode='RGBA')
-            location = (int(town['xyz'][0]) - icon.size[0] // 2, int(town['xyz'][1]) - icon.size[1] // 2)
+            location = (int(scale_factor*town['xyz'][0]) - icon.size[0] // 2, int(scale_factor*town['xyz'][1]) - icon.size[1] // 2)
             map_so_far.paste(icon, location, mask=icon.split()[3])
 
         map_so_far = np.array(map_so_far.convert('RGB'))
 
     # ----------------------------------- Roads ---------------------------------- #
     if return_step >= RETURN_STEP_OPTIONS.roads:
-        pass
-
+        # TODO: smooth the roads
+        for _, road in roads['edges'].items():
+            map_so_far = cv2.polylines(map_so_far, [(scale_factor*np.array(road['line'].xy)).T.reshape((-1,1,2)).astype(np.int32)], isClosed=False, color=roads_color, thickness=roads_line_width)  
+                    
     return map_so_far
 
 
@@ -203,8 +224,8 @@ if __name__ == '__main__':
     import matplotlib.pyplot as plt
 
     height_map = np.load('assets/defaults/height_map.npy')
-    poly_shape = list(np.load('assets/defaults/poly_shape.npz').values())
-    full_chart = plot_map(height_map=None, poly_shape=poly_shape, return_step='poly_shape')
+    shape = np.load('assets/defaults/shape.npy')
+    full_chart = plot_map(height_map=None, shape=shape, return_step='poly_shape')
 
     plt.imshow(full_chart)
     plt.axis('off')
