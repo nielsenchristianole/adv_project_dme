@@ -163,8 +163,8 @@ class SinusoidalEmbedder(torch.nn.Module):
         """
         return scipy.stats.gamma.rvs(*(3.556653401460509, 0.009988185776161805, 0.03552099331432453), size=num_samples)
     
-    def sample(self, num_samples: int, *, return_scalers: bool=False, conds: Optional[float]=None) -> Union[torch.Tensor, Tuple[torch.Tensor, np.ndarray]]:
-        sizes = self.sample_sizes(num_samples) if conds is None else np.full(num_samples, conds).astype(float)
+    def sample(self, num_samples: int, *, return_scalers: bool=False, conds: Optional[Union[float, np.ndarray]]=None) -> Union[torch.Tensor, Tuple[torch.Tensor, np.ndarray]]:
+        sizes = self.sample_sizes(num_samples) if conds is None else (np.full(num_samples, conds).astype(float) if isinstance(conds, (int, float)) else conds)
         time = torch.tensor(sizes).float()
         conds = self.forward({self.key: time}).unsqueeze(1)
         if return_scalers:
