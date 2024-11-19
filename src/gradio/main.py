@@ -17,6 +17,9 @@ from src.gradio.path_finder import AStar, GreedyBestFirst, BridgeEuclideanHeuris
 # from src.gradio.town_generator import TownGenerator
 from src.gradio.height_shape_generator import HeightShapeGenerator
 
+# Used to store downloadable files, Note! This won't work with multiple users
+GRADIO_TMP_DATA_FOLDER='data/gradio_tmp'
+os.makedirs(GRADIO_TMP_DATA_FOLDER, exist_ok=True)
 
 RESOLUTION=2000
 
@@ -136,8 +139,14 @@ with gr.Blocks() as demo:
                     image_mode='RGB',
                     show_download_button=False)                
                 with gr.Row():
-                    gr.DownloadButton('Download PNG')
-                    gr.DownloadButton('Download JSON')
+                    def download_map(current_map_image):
+                        if current_map_image is None:
+                            current_map_image = plot_map(return_step='empty', resolution=RESOLUTION)
+                        save_path = os.path.join(GRADIO_TMP_DATA_FOLDER,'gradio_tmp.png')
+                        bgr_im = cv2.cvtColor(current_map_image, cv2.COLOR_RGB2BGR)
+                        cv2.imwrite(save_path, bgr_im)
+                        return save_path
+                    gr.DownloadButton('Download PNG', value=download_map, inputs=current_map_image)
                 
             with gr.Tab('3d Mesh'):
                 output_mesh_hm = gr.Model3D(
@@ -145,8 +154,15 @@ with gr.Blocks() as demo:
                         interactive=False
                     )
                 generate_mesh_button = gr.Button('Generate 3D Mesh')
-                gr.DownloadButton('Download 3D Mesh')
-        
+                mesh_download_btn = gr.DownloadButton('Download 3D Mesh')
+                @mesh_download_btn.click(
+                    inputs=[output_mesh_hm],
+                    outputs=[output_mesh_hm])
+                def download_mesh(output_mesh_hm):
+                    if output_mesh_hm is None: 
+                        gr.Warning('No mesh generated yet, please generate before downloading')
+                    return gr.update(value=output_mesh_hm)
+                
             # ----------------------------- Intervention Tabs ---------------------------- #
             gr.HTML("<H2>Custom editor</H2><p>Click on the map to edit the landscape</p>")
             edit_shape_tab = gr.Tab('Outline editor')
@@ -162,8 +178,8 @@ with gr.Blocks() as demo:
             edit_height_tab = gr.Tab("Height map editor")
             with edit_height_tab:
                 with gr.Row():                  
-                    close_btn = gr.Button('Close Polygon') # Changes to Open Polygon when closed
-                    clear_btn = gr.Button('Clear Points')
+                    h_close_btn = gr.Button('Close Polygon') # Changes to Open Polygon when closed
+                    h_clear_btn = gr.Button('Clear Points')
                 with gr.Row():
                     height_poly_regen_area_btn = gr.Button('Generative infill')
             edit_town_tab = gr.Tab("Town editor")
@@ -482,7 +498,7 @@ with gr.Blocks() as demo:
         if height_map is None:
             gr.Warning('No height map generated yet, please generate a height map first!')
             return None
-        output_path = 'assets/defaults/terrain_mesh.obj'
+        output_path = os.path.join(GRADIO_TMP_DATA_FOLDER, 'terrain_mesh.obj')
         output_path = heightmap_to_3d_mesh(height_map, output_path=output_path)
         return output_path
 
