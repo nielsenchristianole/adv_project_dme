@@ -4,7 +4,7 @@ import yaml
 
 from CityGeneration.src.utils import utils
 from CityGeneration.src.modules.train_module import TrainModule
-
+# from pytorch_lightning.core.lightning import LightningModule
 from types import SimpleNamespace as NameSpace
 
 
