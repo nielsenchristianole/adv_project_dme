@@ -11,12 +11,14 @@ import matplotlib.pyplot as plt
 from src.testing.utils.ldm_utils import load_models, suppress_logs
 
 # configs
+cmap = 'gray'
 out_dir = './results/gen_infill'
 batch_size = 16
 device = 'cuda'
 show_plots = False
 force_original_content = False # set to true, if only the mask can be changed
 deterministic_x_T = False # this should always be False for some reason...
+input_idx = 0
 
 # model configs
 model_configs = {
@@ -33,30 +35,31 @@ with suppress_logs():
     shape_model, height_model = load_models(model_configs)
 
 out_dir = Path(out_dir)
-out_dir = out_dir / f'{force_original_content=}_{deterministic_x_T=}'
+# out_dir = out_dir / f'{force_original_content=}_{deterministic_x_T=}'
 out_dir.mkdir(exist_ok=True, parents=True)
 
 
 
 # load input images
-shape_im = np.load('./data/samples/shapes/shape_0.npy')
-height_im = np.load('./data/samples/heights/height_0.npy')
+shape_im = np.load(f'./data/samples/shapes/shape_{input_idx}.npy')
+height_im = np.load(f'./data/samples/heights/height_{input_idx}.npy')
 # shape_cond_scalar = shape_im.mean()
 
 # plot orig image
-fig, axs = plt.subplots(1, 2, figsize=(10, 5))
-axs[0].imshow(shape_im)
-axs[0].set_title('Shape')
-axs[0].axis('off')
-axs[1].imshow(height_im)
-axs[1].set_title('Height')
-axs[1].axis('off')
-plt.tight_layout()
-plt.savefig(out_dir / 'original.png', dpi=300)
-if show_plots:
-    plt.show()
-else:
-    plt.close(fig)
+if False:
+    fig, axs = plt.subplots(1, 2, figsize=(10, 5))
+    axs[0].imshow(shape_im)
+    axs[0].set_title('Shape')
+    axs[0].axis('off')
+    axs[1].imshow(height_im)
+    axs[1].set_title('Height')
+    axs[1].axis('off')
+    plt.tight_layout()
+    plt.savefig(out_dir / 'original.png', dpi=300)
+    if show_plots:
+        plt.show()
+    else:
+        plt.close(fig)
 
 
 # shape_im = torch.from_numpy(shape_im).to(device)
@@ -69,15 +72,16 @@ mask[
     shape_im.shape[0] // 4:3 * shape_im.shape[0] // 4,
     shape_im.shape[1] // 4:3 * shape_im.shape[1] // 4] = 0.
 
-plt.imshow(mask)
-plt.title('Mask, 1s are kept, 0s are filled')
-plt.axis('off')
-plt.colorbar()
-plt.savefig(out_dir / 'mask.png', dpi=300)
-if show_plots:
-    plt.show()
-else:
-    plt.close()
+if False:
+    plt.imshow(mask)
+    plt.title('Mask, 1s are kept, 0s are filled')
+    plt.axis('off')
+    plt.colorbar()
+    plt.savefig(out_dir / 'mask.png', dpi=300)
+    if show_plots:
+        plt.show()
+    else:
+        plt.close()
 
 
 
@@ -209,7 +213,6 @@ def regenerate_height(
     return x_0_height.detach().cpu().squeeze(1).numpy()
 
 
-
 def regenerate_shape_and_height(
     shape_im_orig: np.ndarray,
     height_im_orig: np.ndarray,
@@ -257,7 +260,6 @@ def regenerate_shape_and_height(
     
 
 
-
 # ---------- shape generative infill ----------
 x_0_shape = regenerate_shape(
     shape_im,
@@ -267,18 +269,19 @@ x_0_shape = regenerate_shape(
     deterministic_x_T=deterministic_x_T, device=device)
 
 # save the generated shapes
-fig_size = int(np.sqrt(batch_size))
-assert fig_size ** 2 == batch_size, 'Batch size must be a square number'
-fig, axs = plt.subplots(fig_size, fig_size, figsize=(fig_size*5, fig_size*5))
-for _shape, ax in zip(x_0_shape, axs.flatten()):
-    ax.imshow(_shape)
-    ax.axis('off')
-plt.tight_layout()
-plt.savefig(out_dir / 'generated_shapes.png', dpi=300)
-if show_plots:
-    plt.show()
-else:
-    plt.close(fig)
+if False:
+    fig_size = int(np.sqrt(batch_size))
+    assert fig_size ** 2 == batch_size, 'Batch size must be a square number'
+    fig, axs = plt.subplots(fig_size, fig_size, figsize=(fig_size*5, fig_size*5))
+    for _shape, ax in zip(x_0_shape, axs.flatten()):
+        ax.imshow(_shape)
+        ax.axis('off')
+    plt.tight_layout()
+    plt.savefig(out_dir / 'generated_shapes.png', dpi=300)
+    if show_plots:
+        plt.show()
+    else:
+        plt.close(fig)
     
 
 # ---------- height generative infill ----------
@@ -292,21 +295,22 @@ x_0_height = regenerate_height(
     device=device)
 
 
-# save the generated heights
-fig, axs = plt.subplots(fig_size, fig_size, figsize=(fig_size*5, fig_size*5))
-for _height, ax in zip(x_0_height, axs.flatten()):
-    ax.imshow(_height)
-    ax.axis('off')
-plt.tight_layout()
-plt.savefig(out_dir / 'generated_heights.png', dpi=300)
-if show_plots:
-    plt.show()
-else:
-    plt.close(fig)
+if False:
+    # save the generated heights
+    fig, axs = plt.subplots(fig_size, fig_size, figsize=(fig_size*5, fig_size*5))
+    for _height, ax in zip(x_0_height, axs.flatten()):
+        ax.imshow(_height)
+        ax.axis('off')
+    plt.tight_layout()
+    plt.savefig(out_dir / 'generated_heights.png', dpi=300)
+    if show_plots:
+        plt.show()
+    else:
+        plt.close(fig)
 
 
 # ---------- shape and height generative infill ----------
-x_0_shape, x_0_height = regenerate_shape_and_height(
+x_0_shape_both, x_0_height_both = regenerate_shape_and_height(
     shape_im,
     height_im,
     mask,
@@ -315,19 +319,61 @@ x_0_shape, x_0_height = regenerate_shape_and_height(
     deterministic_x_T=deterministic_x_T,
     device=device)
 
-# save the generated shapes and heights
-fig, axs = plt.subplots(fig_size, 2*fig_size, figsize=(fig_size*10, fig_size*5))
-shape_axs = axs[:, :fig_size]
-height_axs = axs[:, fig_size:]
+if False:
+    # save the generated shapes and heights
+    fig, axs = plt.subplots(fig_size, 2*fig_size, figsize=(fig_size*10, fig_size*5))
+    shape_axs = axs[:, :fig_size]
+    height_axs = axs[:, fig_size:]
 
-for _shape, _height, shape_ax, height_ax in zip(x_0_shape, x_0_height, shape_axs.flatten(), height_axs.flatten()):
-    shape_ax.imshow(_shape)
-    shape_ax.axis('off')
-    height_ax.imshow(_height)
-    height_ax.axis('off')
-plt.tight_layout()
-plt.savefig(out_dir / 'generated_shapes_and_heights.png', dpi=300)
-if show_plots:
-    plt.show()
-else:
-    plt.close(fig)
+    for _shape, _height, shape_ax, height_ax in zip(x_0_shape_both, x_0_height_both, shape_axs.flatten(), height_axs.flatten()):
+        shape_ax.imshow(_shape)
+        shape_ax.axis('off')
+        height_ax.imshow(_height)
+        height_ax.axis('off')
+    plt.tight_layout()
+    plt.savefig(out_dir / 'generated_shapes_and_heights.png', dpi=300)
+    if show_plots:
+        plt.show()
+    else:
+        plt.close(fig)
+
+
+
+num_im_cols = 6
+figlength = 1.5
+fig = plt.figure(layout='constrained', figsize=(num_im_cols*figlength, 7*figlength))
+subfigs = fig.subfigures(4, 1, height_ratios=[2, 2, 2, 2]).flatten()
+
+axstop = subfigs[0].subplots(1, 3)
+axstop[0].imshow(shape_im, cmap=cmap)
+axstop[0].set_title('Shape')
+axstop[0].axis('off')
+axstop[1].imshow(height_im, cmap=cmap)
+axstop[1].set_title('Height')
+axstop[1].axis('off')
+axstop[2].imshow(~mask.astype(bool), cmap=cmap)
+axstop[2].set_title('Mask for generative infill,\nkeeping outside')
+axstop[2].axis('off')
+
+for subfig, images in zip(subfigs[1:], (x_0_shape, x_0_height, x_0_height_both)):
+    axsbottom = subfig.subplots(2, num_im_cols)
+
+    for im_idx, im in enumerate(images[:num_im_cols*2]):
+        row_offset = im_idx // num_im_cols
+        col_offset = im_idx % num_im_cols
+        
+        ax = axsbottom[row_offset, col_offset]
+        ax.imshow(im, cmap=cmap)
+        ax.axis('off')
+
+subfigs[0].suptitle('Original')
+subfigs[1].suptitle('Generated shape infill')
+subfigs[2].suptitle('Generated height infill')
+subfigs[3].suptitle('Generated infill both')
+
+# plt.tight_layout()
+plt.savefig(out_dir / f'generated_infill_{input_idx}.pdf', dpi=300)
+# plt.show()
+plt.close(fig)
+
+quit()
