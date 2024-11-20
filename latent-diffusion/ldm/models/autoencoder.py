@@ -430,7 +430,8 @@ class AutoencoderKL(pl.LightningModule):
             x = ContinuousBernoulli(logits=x).mean
             if shape_cond is not None:
                 x *= shape_cond.type_as(x)
-        
+        elif self.im_recon_mode == 'continuous_binary':
+            x = torch.sigmoid(x)
         if self.negative_1_to_1:
             return 2 * x - 1
         return x

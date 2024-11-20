@@ -64,7 +64,6 @@ class HeightShapeGenerator:
             *,
             batch_size: Optional[int] = 1,
             force_original_content: bool = False,
-            deterministic_x_T: bool = False,
             device='cuda'
         ) -> np.ndarray:
         """
@@ -73,6 +72,7 @@ class HeightShapeGenerator:
 
         Returns: shape (batch_size, 128, 128)
         """
+        deterministic_x_T: bool = False
         assert shape_im_orig.shape[-2:] == (128, 128), 'Shape must be 128x128'
         im_has_batch = (shape_im_orig.ndim == 3)
         assert im_has_batch != (batch_size is not None), 'Batch size must be provided through either shape_im or batch_size, not both'
@@ -127,7 +127,6 @@ class HeightShapeGenerator:
         *,
         batch_size: int = 1,
         device: str = 'cuda',
-        deterministic_x_T: bool = False,
         force_original_content: bool = False
     ) -> np.ndarray:
         """
@@ -135,7 +134,7 @@ class HeightShapeGenerator:
         height_im_orig: shape (128, 128)
         mask: shape (128, 128) with bool values
         """
-
+        deterministic_x_T: bool = False
         assert height_im_orig.shape[-2:] == (128, 128), 'Height must be 128x128'
         assert shape_im_orig is None or shape_im_orig.shape[-2:] == (128, 128), 'Shape must be 128x128'
         assert mask.shape == shape_im_orig.shape[-2:] and mask.ndim == 2, 'Mask must be 128x128'
@@ -198,7 +197,6 @@ class HeightShapeGenerator:
         *,
         batch_size: Optional[int] = 1,
         force_original_content: bool = False,
-        deterministic_x_T: bool = False,
         device: str = 'cuda'
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
@@ -208,7 +206,7 @@ class HeightShapeGenerator:
 
         Returns: shape (batch_size, 128, 128)
         """
-
+        deterministic_x_T: bool = False
         assert shape_im_orig.shape == height_im_orig.shape
         im_has_batch = (shape_im_orig.ndim == 3)
         assert im_has_batch != (batch_size is not None), 'Batch size must be provided through either shape_im or batch_size, not both'

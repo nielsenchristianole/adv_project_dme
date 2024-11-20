@@ -587,6 +587,7 @@ with gr.Blocks() as demo:
             shape_quality_slider],
         outputs=[
             shape_state,
+            height_map_state,
             towns_state,
             towns_to_connect_state,
             roads_state,
