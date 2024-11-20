@@ -112,7 +112,7 @@ class HeightData(Dataset):
     def __getitem__(self, idx, *, mirror: Optional[bool]=None, angle: Optional[float]=None):
 
         # load
-        contour = self.contours[idx]
+        contour = self.contours[idx].copy()
         offset = self.offsets[idx]
         height_map = np.load(self.paths[idx])[..., None].astype(np.float32)
         center = self.centers[[idx]]
@@ -163,23 +163,33 @@ if __name__ == '__main__':
     key = 'image'
 
     path = f'./data/height_contours/df_{im_size}/df.shp'
-    # dataset = HeightData(path, im_size=im_size, mode='all')
+    dataset = HeightData(path, im_size=im_size, mode='all')
+    dataset.height_transform = transforms.Compose([])
 
-    # data = list()
-    # data_raw = list()
-    # fig, ax = plt.subplots(2)
-    # for i in tqdm.trange(len(dataset), desc='getting height hist'):
-    #     out = dataset.__getitem__(i, mirror=False, angle=0.)
-    #     im = out['image'].cpu().numpy().squeeze(-1).ravel()
-    #     mask = (out['shape'].cpu().numpy().squeeze(-1).ravel() > 0)
-    #     data.append(
-    #         im[mask])
-    #     data_raw.append(im)
-    # data = np.concatenate(data)
-    # data_raw = np.concatenate(data_raw)
-    # ax[0].hist(data)
-    # ax[0].hist(np.exp(-data))
-    # plt.show()
+    data = list()
+    data_raw = list()
+    for i in tqdm.trange(len(dataset), desc='getting height hist'):
+        out = dataset.__getitem__(i, mirror=False, angle=0.)
+        im = out['image'].cpu().numpy().squeeze(-1).ravel()
+        mask = (out['shape'].cpu().numpy().squeeze(-1).ravel() > 0)
+        data.append(
+            im[mask])
+        data_raw.append(im)
+    data = np.concatenate(data)
+    data = data[data > 0]
+    data_raw = np.concatenate(data_raw)
+
+    fig, ax = plt.subplots(1, 2, figsize=(10, 5))
+    ax[0].hist(data, bins=20)
+    ax[0].set_title('Height distribution')
+    ax[1].hist(1 - np.exp(-data / 300), bins=20)
+    ax[1].set_title('Transformed height distribution using $\mu=300$')
+    fig.tight_layout()
+    plt.savefig('results/shapes_and_heights/height_dist.pdf')
+    plt.show()
+    quit()
+
+
 
     # for i in [487, 3968, 3969, 7524]:
     #     fig, ax = plt.subplots(2)
