@@ -13,7 +13,7 @@ def get_inference_model(ckpt_path : str,
                         params : NameSpace,
                         model_params : NameSpace) -> None:
     
-    ckpt_data = torch.load(ckpt_path, map_location=torch.device('cpu'))
+    ckpt_data = torch.load(ckpt_path)
     model = utils.get_model(model_params)
     new_state_dict = {k.replace("model.", ""): v for k, v in ckpt_data["state_dict"].items()}
     model.load_state_dict(new_state_dict)

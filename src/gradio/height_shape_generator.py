@@ -223,7 +223,6 @@ class HeightShapeGenerator:
             mask,
             batch_size=batch_size,
             force_original_content=force_original_content,
-            deterministic_x_T=deterministic_x_T,
             device=device)
         
         if not im_has_batch:

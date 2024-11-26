@@ -32,6 +32,9 @@ SHAPE_SIZE_MIN = 0.0
 SHAPE_SIZE_MAX = 0.5
 DDIM_STEPS_MIN = 10
 DDIM_STEPS_MAX = 500
+TOWN_REPEL_MIN = 0.25
+TOWN_REPEL_MAX = 5.0
+
 
 ddim_file = np.load('assets/possible_ddim_schedules.npy').astype(bool)
 AVAILABLE_DDIMS = np.where(ddim_file)[0]
@@ -44,8 +47,7 @@ with gr.Blocks() as demo:
     town_generation_method = gr.State('Random')
 
     if not USE_EXAMPLE_DATA:
-        height_shape_generator = HeightShapeGenerator(device = 'cpu')
-        # TODO: Town generator object
+        height_shape_generator = HeightShapeGenerator()
         town_generator = TownGenerator(
             config_path="out/city_gen/config.yaml", 
             model_config_path="out/city_gen/model_config.yaml", 
@@ -82,7 +84,7 @@ with gr.Blocks() as demo:
                     with gr.Accordion('Advanced outline config', open=False):
                         with gr.Row():
                             manual_shape_size = gr.Checkbox(value=False, label='Manually query shape size', interactive=True)
-                            shape_size_slider = gr.Slider(value=0.5, label='Island Size', info='Choose a higher number for larger', minimum=0.0, maximum=1.0, step=0.01, visible=False, interactive=False)
+                            shape_size_slider = gr.Slider(value=0.4, label='Island Size', info='Choose a higher number for larger', minimum=0.0, maximum=1.0, step=0.01, visible=False, interactive=False)
                             @manual_shape_size.input(inputs=[manual_shape_size, shape_size_slider], outputs=[shape_size_slider])
                             def _enable_shape_slider(checked: bool, value: float):
                                 if checked:
@@ -90,14 +92,14 @@ with gr.Blocks() as demo:
                                 else:
                                     return gr.Slider(value=value, label='Island Size', info='Choose a higher number for larger', minimum=0.0, maximum=1.0, step=0.01, visible=False, interactive=False)
                                     
-                        shape_quality_slider = gr.Slider(value=1.0, label='Generation Quality', info='Higher value means better quality but slower generation.', minimum=0.0, maximum=1.0, step=0.01, interactive=True)
+                        shape_quality_slider = gr.Slider(value=0.4, label='Generation Quality', info='Higher value means better quality but slower generation.', minimum=0.0, maximum=1.0, step=0.01, interactive=True)
                 
                 # --------------------------- Height map generation -------------------------- #
                 
                 with gr.Column():
                     run_generate_height_map_button = gr.Button('Generate Height Map')
                     with gr.Accordion('Advanced height map config', open=True):
-                        height_quality_slider = gr.Slider(value=1.0, label='Generation Quality', info='Higher value means better quality but slower generation.', minimum=0.0, maximum=1.0, step=0.01, interactive=True)
+                        height_quality_slider = gr.Slider(value=0.5, label='Generation Quality', info='Higher value means better quality but slower generation.', minimum=0.0, maximum=1.0, step=0.01, interactive=True)
 
                 # ------------------------------ Town generation ----------------------------- #
                 with gr.Column():
@@ -110,7 +112,8 @@ with gr.Blocks() as demo:
                         with gr.Row():
                             town_config_custom_town_type_radio = gr.Radio([("Random", "random")] + [(c.capitalize(), c) for c in TOWN_TYPES], value='random', label='Town Type', interactive=True)
                             town_config_custom_town_feature_radio = gr.Radio([('Random','random'), ('Coastal','coastal'), ('Inland','inland')], value = 'random', label='Town Features', interactive = True)
-
+                        town_repel_slider = gr.Slider(value=0, label='Spacing Strength', info='Higher values means cities are more likely to be spaced further from each other.', minimum=0.0, maximum=1.0, step=0.01, interactive=True, visible=True)
+                
                 # ------------------------------ Road generation ----------------------------- #
                 with gr.Column():
                     with gr.Row():
@@ -152,7 +155,8 @@ with gr.Blocks() as demo:
                     label='Map',
                     interactive=False,
                     image_mode='RGB',
-                    show_download_button=False)                
+                    show_download_button=False
+                    )                
                 with gr.Row():
                     def download_map(current_map_image):
                         if current_map_image is None:
@@ -192,16 +196,17 @@ with gr.Blocks() as demo:
                     shape_poly_regen_area_btn = gr.Button('Regenerate outline in the area')
             edit_height_tab = gr.Tab("Height map editor")
             with edit_height_tab:
+                gr.HTML("<p> Click to draw an area that should be changed\n <b>WARNING!</b> <i>This will completely erase existing cities and roads.</i></p>")
                 with gr.Row():                  
                     h_close_btn = gr.Button('Close Polygon') # Changes to Open Polygon when closed
                     h_clear_btn = gr.Button('Clear Points')
                 with gr.Row():
-                    height_poly_regen_area_btn = gr.Button('Regenerate only heights in the area')
-                    shape_height_poly_regen_area_btn = gr.Button('Regenerate outline and heights in the area')
+                    height_poly_regen_area_btn = gr.Button('Regenerate only heights in the drawn area')
+                    shape_height_poly_regen_area_btn = gr.Button('Regenerate outline and heights in the drawn area')
                     
             edit_town_tab = gr.Tab("Town editor")
             with edit_town_tab:
-                town_to_move = gr.Dropdown([], label='Select a town and click on the canvas to move it.')
+                town_to_move = gr.Dropdown([], label='Select a town and click on the canvas to move it there.')
                 @towns_state.change(
                     inputs=[towns_state],
                     outputs=[town_to_move])
@@ -560,7 +565,7 @@ with gr.Blocks() as demo:
         regenerated_shape = regenerated_shape.squeeze(0)
         regenerated_height = regenerated_height.squeeze(0)
         regenerated_height = uniform_to_height(regenerated_height)
-        chart = plot_map(shape=regenerated_shape, height_map=regenerated_height, towns=None, roads=None, return_step='shape', resolution=RESOLUTION)
+        chart = plot_map(shape=regenerated_shape, height_map=regenerated_height, towns=None, roads=None, return_step='height_map', resolution=RESOLUTION)
         
         return regenerated_shape, regenerated_height, list(), list(), RoadGraph.empty(), chart, chart
         
@@ -705,6 +710,7 @@ with gr.Blocks() as demo:
             town_config_random_num_town_slider,
             town_config_custom_town_type_radio,
             town_config_custom_town_feature_radio,
+            town_repel_slider,
             current_map_image,
             output_image],
         outputs=[
@@ -721,6 +727,7 @@ with gr.Blocks() as demo:
         num_towns: int,
         town_type: TOWN_TYPE,
         town_config: List[str],
+        town_repel: float,
         current_map: np.ndarray,
         display_map: np.ndarray
     ) -> dict:
@@ -745,7 +752,6 @@ with gr.Blocks() as demo:
             
         new_names = [name_sampler.pop(town_type, is_coastal) for town_type, is_coastal in zip(town_types, is_coastals)]
         
-        # TODO: Uncomment if-else when town gen is up and running
         if USE_EXAMPLE_DATA:
             for new_name, town_type, is_coastal in zip(new_names, town_types, is_coastals):
                 idx = np.random.choice(num_possible)
@@ -759,9 +765,9 @@ with gr.Blocks() as demo:
                         xyz = [x,y,z],
                         town_name = new_name))
         else:
-            towns = town_generator.generate(height_map, towns, new_names, town_types, is_coastals)
+            repel = scale_value(town_repel, TOWN_REPEL_MIN, TOWN_REPEL_MAX)
+            towns = town_generator.generate(height_map, towns, new_names, town_types, is_coastals, repel)
 
-        
         chart = plot_map(shape, height_map, towns, roads, return_step='roads' if roads['edges'] else 'towns', resolution=RESOLUTION)
 
         return towns, name_sampler, chart, chart
@@ -838,7 +844,13 @@ with gr.Blocks() as demo:
             current_map_image,
             output_image])
     def reset_town(shape, height_map):
-        chart = plot_map(shape, height_map, None, None, return_step='height_map', resolution=RESOLUTION)
+        if height_map is not None:
+            return_step = 'height_map'
+        elif shape is not None: 
+            return_step = 'shape'
+        else:
+            return_step = 'empty'
+        chart = plot_map(shape, height_map, None, None, return_step=return_step, resolution=RESOLUTION)
         return TownNameSampler(), list(), RoadGraph.empty(), chart, chart
 
     # ----------------------------------- Roads ---------------------------------- #
@@ -852,7 +864,15 @@ with gr.Blocks() as demo:
             current_map_image,
             output_image])
     def reset_roads(shape, height_map, towns):
-        chart = plot_map(shape, height_map, towns, None, return_step='towns', resolution=RESOLUTION)
+        if len(towns) > 0:
+            return_step = 'towns'
+        elif height_map is not None:
+            return_step = 'height_map'
+        elif shape is not None:
+            return_step = 'shape'
+        else:
+            return_step = 'empty'
+        chart = plot_map(shape, height_map, towns, None, return_step=return_step, resolution=RESOLUTION)
         return RoadGraph.empty(), chart, chart
 
 
