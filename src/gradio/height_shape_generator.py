@@ -44,8 +44,9 @@ class HeightShapeGenerator:
                  
     def generate_height(self, shape: np.ndarray, ddim_steps = 200, batch_size=1) -> np.ndarray:
         shape = torch.tensor(shape).to(self.device)
-        shape = shape.unsqueeze(0).unsqueeze(1) 
-        
+        shape = shape.unsqueeze(0).unsqueeze(1)
+        if self.shape_model.first_stage_model.im_recon_mode == 'continuous_binary':
+            shape = (shape > 0.5).float()
         with torch.no_grad():
             with suppress_logs():
                 s_dist = self.shape_model.encode_first_stage(shape)
@@ -79,11 +80,14 @@ class HeightShapeGenerator:
         assert mask.shape == shape_im_orig.shape[-2:] and mask.ndim == 2, 'Mask must be 128x128'
         batch_size = batch_size or shape_im_orig.shape[0]
 
+        if self.shape_model.first_stage_model.im_recon_mode == 'continuous_binary':
+            shape_im_orig = (shape_im_orig > 0.5).astype(float)
         mask = (mask > 0).copy()
         shape_im = (shape_im_orig.copy() > 0)
         shape_cond_scalar = mask.mean(axis=(1, 2)) if im_has_batch else mask.mean()
 
         shape_im = torch.from_numpy(shape_im.astype(np.float32)).to(device)
+
         mask = torch.from_numpy(mask.astype(np.float32)).to(device)
         
         with torch.no_grad():
@@ -141,9 +145,11 @@ class HeightShapeGenerator:
 
         assert ((height_im_orig.ndim == shape_im_orig.ndim == 3) and batch_size is None) or \
             ((height_im_orig.ndim == shape_im_orig.ndim == 2) and batch_size is not None), 'Batch size must be provided through either height_im or batch_size, not both'
+
         im_has_batch = (height_im_orig.ndim == 3)
         batch_size = batch_size or height_im_orig.shape[0]
-
+        if self.shape_model.first_stage_model.im_recon_mode == 'continuous_binary':
+            shape_im_orig = (shape_im_orig > 0.5).astype(float)
         shape_im = (shape_im_orig.copy() > 0) if shape_im_orig is not None else (height_im_orig > 0)
         height_im = height_im_orig.copy()
 
@@ -229,7 +235,6 @@ class HeightShapeGenerator:
             mask,
             batch_size=None,
             force_original_content=force_original_content,
-            deterministic_x_T=deterministic_x_T,
             device=device)
         
         return shape_x_0, height_x_0

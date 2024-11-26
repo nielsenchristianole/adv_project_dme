@@ -499,9 +499,11 @@ with gr.Blocks() as demo:
         if not poly_closed or len(poly_points) < 3:
             gr.Warning('Polygon needs to be closed and have at least 3 points!')
             return shape, height_map, towns_state, towns_to_connect, roads, generated_map, display_map
+        # Make shape into binary mask
+        bin_shape = shape > 0.5
         
-        polygon_mask = np.logical_not(create_polygon_mask(poly_points, shape)).astype(np.uint8)
-        regenerated_height = height_shape_generator.regenerate_height(height_to_uniform(height_map), shape, polygon_mask, batch_size=1).squeeze(0)
+        polygon_mask = np.logical_not(create_polygon_mask(poly_points, bin_shape)).astype(np.uint8)
+        regenerated_height = height_shape_generator.regenerate_height(height_to_uniform(height_map), bin_shape, polygon_mask, batch_size=1).squeeze(0)
         regenerated_height = uniform_to_height(regenerated_height)
         #TODO: Should be masked?
         chart = plot_map(shape=shape, height_map=regenerated_height, towns=None, roads=None, return_step='height_map', resolution=RESOLUTION)
@@ -541,8 +543,9 @@ with gr.Blocks() as demo:
             gr.Warning('Polygon needs to be closed and have at least 3 points!')
             return shape, height_map, towns_state, towns_to_connect, roads, generated_map, display_map
         
-        polygon_mask = np.logical_not(create_polygon_mask(poly_points, shape)).astype(np.uint8)
-        regenerated_shape, regenerated_height = height_shape_generator.regenerate_shape_and_height(shape, height_to_uniform(height_map), polygon_mask, batch_size=1)
+        bin_shape = shape > 0.5
+        polygon_mask = np.logical_not(create_polygon_mask(poly_points, bin_shape)).astype(np.uint8)
+        regenerated_shape, regenerated_height = height_shape_generator.regenerate_shape_and_height(bin_shape, height_to_uniform(height_map), polygon_mask, batch_size=1)
         regenerated_shape = regenerated_shape.squeeze(0)
         regenerated_height = regenerated_height.squeeze(0)
         regenerated_height = uniform_to_height(regenerated_height)
@@ -652,11 +655,14 @@ with gr.Blocks() as demo:
         ddim_steps = scale_value(quality, DDIM_STEPS_MIN, DDIM_STEPS_MAX, 'int')
         if USE_EXAMPLE_DATA:
             height_map = np.load(os.path.join(EXAMPLE_DATA_PATH, 'heights', f'height_{example_data_nr}.npy'))
+            height_map = uniform_to_height(height_map)
+            height_map[shape == 0] = -1
         else:
-            height_map = height_shape_generator.generate_height(shape, ddim_steps, batch_size=1).squeeze(0)
-        height_map = uniform_to_height(height_map)
-        height_map[shape == 0] = -1
-
+            bin_shape = shape > 0.5
+            height_map = height_shape_generator.generate_height(bin_shape, ddim_steps, batch_size=1).squeeze(0)
+            height_map = uniform_to_height(height_map)
+            height_map[bin_shape == 0] = -1
+            
         if only_generate:
             return height_map, None, None, None, None, None, None
         chart = plot_map(shape, height_map, towns=None, roads=None, return_step='height_map', resolution=RESOLUTION)
