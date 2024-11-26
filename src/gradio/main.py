@@ -14,7 +14,7 @@ from src.gradio.gradio_utils import TownNameSampler
 from src.gradio.gradio_configs import CLOSE_ICON
 from src.gradio.path_finder import AStar, GreedyBestFirst, BridgeEuclideanHeuristic
 
-# from src.gradio.town_generator import TownGenerator
+from src.gradio.town_generator import TownGenerator
 from src.gradio.height_shape_generator import HeightShapeGenerator
 
 # Used to store downloadable files, Note! This won't work with multiple users
@@ -46,9 +46,7 @@ with gr.Blocks() as demo:
     if not USE_EXAMPLE_DATA:
         height_shape_generator = HeightShapeGenerator()
         # TODO: Town generator object
-        # town_generator = TownGenerator(config_path = "out/city_gen/config.yaml",
-        #                                model_config_path="out/city_gen/model_config.yaml",
-        #                                checkpoint_path="out/city_gen/checkpoint.ckpt")
+        town_generator = TownGenerator(model_path = "out/city_gen/city_gen_model.pt")
         
     # current states
     shape_state = gr.State(None)
@@ -743,20 +741,20 @@ with gr.Blocks() as demo:
         new_names = [name_sampler.pop(town_type, is_coastal) for town_type, is_coastal in zip(town_types, is_coastals)]
         
         # TODO: Uncomment if-else when town gen is up and running
-        # if USE_EXAMPLE_DATA:
-        for new_name, town_type, is_coastal in zip(new_names, town_types, is_coastals):
-            idx = np.random.choice(num_possible)
-            x = possible_choices[1][idx]
-            y = possible_choices[0][idx]
-            z = height_map[y, x]
-            towns.append(
-                Town(
-                    town_type = town_type,
-                    is_coastal = is_coastal,
-                    xyz = [x,y,z],
-                    town_name = new_name))
-        # else:
-        #   towns = town_generator.generate(height_map, towns, new_names, town_types, is_coastals)
+        if USE_EXAMPLE_DATA:
+            for new_name, town_type, is_coastal in zip(new_names, town_types, is_coastals):
+                idx = np.random.choice(num_possible)
+                x = possible_choices[1][idx]
+                y = possible_choices[0][idx]
+                z = height_map[y, x]
+                towns.append(
+                    Town(
+                        town_type = town_type,
+                        is_coastal = is_coastal,
+                        xyz = [x,y,z],
+                        town_name = new_name))
+        else:
+            towns = town_generator.generate(height_map, towns, new_names, town_types, is_coastals)
 
         
         chart = plot_map(shape, height_map, towns, roads, return_step='roads' if roads['edges'] else 'towns', resolution=RESOLUTION)
