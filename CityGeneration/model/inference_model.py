@@ -24,7 +24,7 @@ class InferenceModel(nn.Module):
         input = input / 500 # normalization
         input = input.astype(np.float32)
     
-        input = T.ToTensor()(input)[None,...].to(self.model.device)
+        input = T.ToTensor()(input)[None,...]
     
         return input
         

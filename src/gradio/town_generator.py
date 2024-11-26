@@ -1,8 +1,8 @@
 
 from src.gradio.demo_types import Town
 
-# from CityGeneration.inference import get_inference_model
-# from CityGeneration.src.utils.utils import dict_to_namespace
+from CityGeneration.inference import get_inference_model
+from CityGeneration.src.utils.utils import dict_to_namespace
 from CityGeneration.src.utils.image_utils import crop_to_square, resize
 from CityGeneration.conditional_sampler import ConditionalSampler
 
@@ -19,23 +19,22 @@ from typing import List
 import torch
 
 class TownGenerator:
-    def __init__(self, model_path):
+    def __init__(self, config_path: str, model_config_path: str, checkpoint_path: str):
         
-        # with open(config_path, 'r') as f:
-        #     config_args = yaml.safe_load(f)
+        with open(config_path, 'r') as f:
+            config_args = yaml.safe_load(f)
 
-        # with open(model_config_path, 'r') as f:
-        #     model_config_args = yaml.safe_load(f)
+        with open(model_config_path, 'r') as f:
+            model_config_args = yaml.safe_load(f)
             
-        # assert config_args is not None, "Configuration file is empty."
-        # assert model_config_args is not None, "Model configuration file is empty."
+        assert config_args is not None, "Configuration file is empty."
+        assert model_config_args is not None, "Model configuration file is empty."
 
-        # params = dict_to_namespace(config_args)
-        # model_params = dict_to_namespace(model_config_args)
+        params = dict_to_namespace(config_args)
+        model_params = dict_to_namespace(model_config_args)
         
-        # self.model = get_inference_model(checkpoint_path, params, model_params)
-        
-        self.model = torch.jit.load(model_path)
+        self.model = get_inference_model(checkpoint_path, params, model_params)
+
 
         kernel = RBF(5, (1e-10, 1e6)) * C(1.0, (1e-10, 1e6))
         self.gp = GaussianProcessRegressor(kernel=kernel, 

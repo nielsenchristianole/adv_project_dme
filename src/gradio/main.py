@@ -44,9 +44,14 @@ with gr.Blocks() as demo:
     town_generation_method = gr.State('Random')
 
     if not USE_EXAMPLE_DATA:
-        height_shape_generator = HeightShapeGenerator()
+        height_shape_generator = HeightShapeGenerator(device = 'cpu')
         # TODO: Town generator object
-        town_generator = TownGenerator(model_path = "out/city_gen/city_gen_model.pt")
+        town_generator = TownGenerator(
+            config_path="out/city_gen/config.yaml", 
+            model_config_path="out/city_gen/model_config.yaml", 
+            checkpoint_path="out/city_gen/checkpoint.ckpt"
+        )
+    
         
     # current states
     shape_state = gr.State(None)

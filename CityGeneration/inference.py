@@ -3,18 +3,20 @@ import argparse
 import yaml
 
 from CityGeneration.src.utils import utils
-from CityGeneration.src.modules.train_module import TrainModule
+#from CityGeneration.src.modules.train_module import TrainModule
 # from pytorch_lightning.core.lightning import LightningModule
 from types import SimpleNamespace as NameSpace
 
+import torch
 
 def get_inference_model(ckpt_path : str,
                         params : NameSpace,
                         model_params : NameSpace) -> None:
     
+    ckpt_data = torch.load(ckpt_path, map_location=torch.device('cpu'))
     model = utils.get_model(model_params)
-    model = TrainModule.load_from_checkpoint(ckpt_path, model = model)
-    
+    new_state_dict = {k.replace("model.", ""): v for k, v in ckpt_data["state_dict"].items()}
+    model.load_state_dict(new_state_dict)
     wrapped = utils.get_inference_model(model, params.inference)
     
     return wrapped
@@ -25,13 +27,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Apply inference on a model")
     
     parser.add_argument('--config', type=str,
-                        default="CityGeneration/out/logs/train-1105/version_35/config.yaml",
+                        default="out\city_gen\config.yaml",
                         help='Path to the configuration file.')
     parser.add_argument('--model_config', type=str,
-                        default="CityGeneration/out/logs/train-1105/version_35/model_config.yaml",
+                        default="out\city_gen\model_config.yaml",
                         help='Path to the model configuration file.')
     parser.add_argument('--checkpoint', type = str,
-                        default = "CityGeneration/out/logs/train-1105/version_35/epoch-7.ckpt",
+                        default = "out\city_gen\checkpoint.ckpt",
                         help="Path to a .ckpt checkpoint file")
     
     args = parser.parse_args()
