@@ -80,11 +80,17 @@ class BridgeEuclideanHeuristic(Heuristic):
         else:
             # Get the height difference
             dz = goal_height - cur_height
-            
-            slope_angle = np.arctan2(dz, np.sqrt(dx**2 + dy**2))
-            slope_cost_factor = 1 + (min(slope_angle, 90) / 90.0) * (self.max_slope_cost_factor - 1)
-            # Calculate the 3D Euclidean distance
-            return np.sqrt(dx**2 + dy**2 + dz**2) * self.cost_per_km * slope_cost_factor
+            horizontal_distance = np.sqrt(dx**2 + dy**2)
+
+            # Calculate the slope angle (in radians) and clamp it to [0, pi/2], disregard negative slopes
+            slope_angle = np.arctan2(abs(dz), horizontal_distance)
+            slope_angle = min(slope_angle, np.pi / 2)
+
+            # Scale slope cost quadratically
+            slope_cost_factor = 1 + ((slope_angle / (np.pi / 2))**2) * (self.max_slope_cost_factor - 1)
+
+            # 3D Euclidean distance with slope factor
+            return np.sqrt(horizontal_distance**2 + dz**2) * self.cost_per_km * slope_cost_factor
 
 
 # ---------------------------------------------------------------------------- #

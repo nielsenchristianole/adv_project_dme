@@ -32,6 +32,9 @@ SHAPE_SIZE_MIN = 0.0
 SHAPE_SIZE_MAX = 0.5
 DDIM_STEPS_MIN = 10
 DDIM_STEPS_MAX = 500
+
+ddim_file = np.load('assets/possible_ddim_schedules.npy').astype(bool)
+AVAILABLE_DDIMS = np.where(ddim_file)[0]
     
 with gr.Blocks() as demo:
 
@@ -134,7 +137,7 @@ with gr.Blocks() as demo:
                                             checkbox.input(add_town_to_connect, inputs=[checkbox, towns_to_connect_state, text_box], outputs=[towns_to_connect_state])
                         
                         with gr.Accordion('Advanced road heuristic config', open=False):
-                            road_config_road_cost = gr.Number(1, label='Road Cost')
+                            road_config_road_cost = gr.Number(1, label='Distance Cost')
                             road_config_slope_factor = gr.Number(10, label='Max Slope Cost Factor')
                             road_config_bridge_factor = gr.Number(100, label='Bridge Cost Factor')
                                         
@@ -212,6 +215,11 @@ with gr.Blocks() as demo:
         if dtype == 'int':
             return int(scaled_value)
         return scaled_value
+    
+    def find_ddim(value, min_value, max_value, available_values=AVAILABLE_DDIMS):
+        ddim = scale_value(value, min_value, max_value, 'int')
+        closest_ddim = available_values[np.abs(available_values - ddim).argmin()]
+        return closest_ddim
     
     def scale_points_canvas_to_model_size(points_xy:np.ndarray, model_img_shape_hw:tuple):
         """
@@ -505,7 +513,7 @@ with gr.Blocks() as demo:
         polygon_mask = np.logical_not(create_polygon_mask(poly_points, bin_shape)).astype(np.uint8)
         regenerated_height = height_shape_generator.regenerate_height(height_to_uniform(height_map), bin_shape, polygon_mask, batch_size=1).squeeze(0)
         regenerated_height = uniform_to_height(regenerated_height)
-        #TODO: Should be masked?
+
         chart = plot_map(shape=shape, height_map=regenerated_height, towns=None, roads=None, return_step='height_map', resolution=RESOLUTION)
         return shape, regenerated_height, list(), list(), RoadGraph.empty(), chart, chart
     
@@ -609,7 +617,7 @@ with gr.Blocks() as demo:
             shape_size = scale_value(size, SHAPE_SIZE_MIN, SHAPE_SIZE_MAX)
         else:
             shape_size = None
-        ddim_steps = scale_value(quality, DDIM_STEPS_MIN, DDIM_STEPS_MAX, 'int')
+        ddim_steps = find_ddim(quality, DDIM_STEPS_MIN, DDIM_STEPS_MAX)
         
         if USE_EXAMPLE_DATA:
             files = os.listdir(os.path.join(EXAMPLE_DATA_PATH, 'shapes'))
@@ -652,7 +660,7 @@ with gr.Blocks() as demo:
     ) -> dict:
         if shape is None:
             shape = generate_shape(manual_shape_size, size, quality, only_generate=True)[0]
-        ddim_steps = scale_value(quality, DDIM_STEPS_MIN, DDIM_STEPS_MAX, 'int')
+        ddim_steps = find_ddim(quality, DDIM_STEPS_MIN, DDIM_STEPS_MAX)
         if USE_EXAMPLE_DATA:
             height_map = np.load(os.path.join(EXAMPLE_DATA_PATH, 'heights', f'height_{example_data_nr}.npy'))
             height_map = uniform_to_height(height_map)
