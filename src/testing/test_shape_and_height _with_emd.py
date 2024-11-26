@@ -4,7 +4,7 @@ import tabulate
 import matplotlib.pyplot as plt
 from pathlib import Path
 
-from src.testing.utils.distance_utils import L2, iou_dist, dice_dist, calculate_stats, uniform_to_height, load_data
+from src.testing.utils.distance_utils import L2, iou_dist, dice_dist, calculate_stats, uniform_to_height, load_data, emd_dist
 
 
 sample_dir = './data/samples'
@@ -57,7 +57,7 @@ raw_table_str = r"""
 shape_tabular_vals = []
 v1 = calculate_stats(sample_shapes, test_shapes, iou_dist)
 pbar.update(1)
-v2 = calculate_stats(sample_shapes, test_shapes, dice_dist)
+v2 = calculate_stats(sample_shapes, test_shapes, emd_dist)
 pbar.update(1)
 
 row = ['Samples']
@@ -65,10 +65,10 @@ for vals in zip(v1, v2):
     row.extend(vals)
 shape_tabular_vals.append(row)
 
-pbar.update(1)
 v1 = calculate_stats(train_shapes, test_shapes, iou_dist)
 pbar.update(1)
-v2 = calculate_stats(train_shapes, test_shapes, dice_dist)
+v2 = calculate_stats(train_shapes, test_shapes, emd_dist)
+pbar.update(1)
 
 row = ['Train subsample']
 for vals in zip(v1, v2):
@@ -77,18 +77,18 @@ shape_tabular_vals.append(row)
 
 # calculate height stats
 height_tabular_vals = []
-v1 = calculate_stats(sample_heights, test_heights, L2)
+v1 = calculate_stats(uniform_to_height(sample_heights), uniform_to_height(test_heights), L2)
 pbar.update(1)
-v2 = calculate_stats(uniform_to_height(sample_heights), uniform_to_height(test_heights), L2)
+v2 = calculate_stats(sample_heights, test_heights, emd_dist)
 pbar.update(1)
 row = ['Samples']
 for vals in zip(v1, v2):
     row.extend(vals)
 height_tabular_vals.append(row)
 
-v1 = calculate_stats(train_heights, test_heights, L2)
+v1 = calculate_stats(uniform_to_height(train_heights), uniform_to_height(test_heights), L2)
 pbar.update(1)
-v2 = calculate_stats(uniform_to_height(train_heights), uniform_to_height(test_heights), L2)
+v2 = calculate_stats(train_heights, test_heights, emd_dist)
 pbar.update(1)
 row = ['Train subsample']
 for vals in zip(v1, v2):
@@ -105,11 +105,11 @@ def save_data(shape_tabular_vals, height_tabular_vals, table_kvargs) -> None:
     height_tabular_str = tabulate.tabulate(height_tabular_vals, **table_kvargs).split(r'\hline')[1]
 
     # write tables
-    shape_table_str = raw_table_str.replace('__dist__', 'iou & dice').replace('__table__', shape_tabular_str).replace('__caption__', 'Shape metrics').replace('__label__', 'tab:shape_results')
+    shape_table_str = raw_table_str.replace('__dist__', 'IoU & EMD').replace('__table__', shape_tabular_str).replace('__caption__', 'Shape metrics').replace('__label__', 'shape_results')
     with open(out_dir / 'shape_table.tex', 'w') as f:
         f.write(shape_table_str)
 
-    height_table_str = raw_table_str.replace('__dist__', r'$L2_{\text{uni}}$ & $L2_{\text{exp}}$').replace('__table__', height_tabular_str).replace('__caption__', 'Height metrics').replace('__label__', 'tab:height_results')
+    height_table_str = raw_table_str.replace('__dist__', r'$L2_{\text{exp}}$ & EMD').replace('__table__', height_tabular_str).replace('__caption__', 'Height metrics').replace('__label__', 'height_results')
     with open(out_dir / 'height_table.tex', 'w') as f:
         f.write(height_table_str)
 
@@ -117,4 +117,5 @@ def save_data(shape_tabular_vals, height_tabular_vals, table_kvargs) -> None:
 save_data(shape_tabular_vals, height_tabular_vals, table_kwargs)
 import pdb
 pdb.set_trace()
+np.save(out_dir / 'raw_result_vals.npy', np.array((shape_tabular_vals, height_tabular_vals)))
 # update table_kwargs and rerun save_data
