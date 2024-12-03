@@ -76,7 +76,7 @@ with gr.Blocks() as demo:
 
         # config column
         with gr.Column(scale = 2):
-            title = gr.HTML("<h1>Fantasy map generator</h1>")
+            title = gr.HTML("<h1>Map generator</h1>")
             with gr.Row():
                 # ----------------------------- Shape generation ----------------------------- #
                 with gr.Column():
@@ -106,7 +106,7 @@ with gr.Blocks() as demo:
                     with gr.Row():
                         run_generate_town_button = gr.Button('Generate Town(s)', scale = 3)
                         reset_town_button = gr.Button('Remove all Towns', scale=2, variant='secondary')
-                    with gr.Accordion('Town config', open=True):
+                    with gr.Accordion('Set town types and more', open=True):
                         town_config_random_num_town_slider = gr.Slider(value=5, label='Number of Towns to Add', minimum=1, maximum=30, step=1, interactive=True)
                         
                         with gr.Row():
@@ -119,7 +119,7 @@ with gr.Blocks() as demo:
                     with gr.Row():
                         run_generate_road_button = gr.Button('Connect towns with roads', scale = 3)
                         reset_roads_button = gr.Button('Remove all roads', scale = 2)
-                    with gr.Accordion('Road config', open=False):
+                    with gr.Accordion('Set towns to connect and more', open=True):
                         # which towns to connect
                         with gr.Accordion('Towns to connect'):
                             @gr.render(inputs=[towns_state], triggers=[towns_state.change])
@@ -131,7 +131,7 @@ with gr.Blocks() as demo:
 
                                         with gr.Row():
                                             checkbox = gr.Checkbox(value=False, label='', interactive=True, show_label=False, container=False, scale=1, min_width=1000)                                            
-                                            text_box = gr.Textbox(value=town['town_name'], lines=1, max_lines=1, interactive=True, show_label=False, container=False, scale=5)
+                                            text_box = gr.Textbox(value=town['town_name'], lines=1, max_lines=1, interactive=False, show_label=False, container=False, scale=5)
                                             def add_town_to_connect(connect: bool, towns: list, town_name: str):
                                                 if connect:
                                                     if not town_name in towns:
@@ -142,7 +142,7 @@ with gr.Blocks() as demo:
                                                 return towns
                                             checkbox.input(add_town_to_connect, inputs=[checkbox, towns_to_connect_state, text_box], outputs=[towns_to_connect_state])
                         
-                        with gr.Accordion('Advanced road heuristic config', open=False):
+                        with gr.Accordion('Advanced: Adjust cost factors', open=False):
                             road_config_road_cost = gr.Number(1, label='Distance Cost')
                             road_config_slope_factor = gr.Number(10, label='Max Slope Cost Factor')
                             road_config_bridge_factor = gr.Number(100, label='Bridge Cost Factor')
@@ -183,20 +183,24 @@ with gr.Blocks() as demo:
                     return output_mesh_path
                 
             # ----------------------------- Intervention Tabs ---------------------------- #
-            gr.HTML("<H2>Custom editor</H2><p>Click on the map to edit the landscape</p>")
+            gr.HTML("<H2>Edit the generated landscape</H2><p>Click on the map to edit the landscape</p>")
             edit_shape_tab = gr.Tab('Outline editor')
             with edit_shape_tab:
-                gr.HTML("<p> Click to draw an area that should be changed\n <b>WARNING!</b> <i>This will completely reset the map to only the outline.</i></p>")
+                gr.HTML("<h3>Edit the generated outline</h3>")
+                gr.HTML("<p>Click to add points to draw a polygon and close the polygon before changing the area</p>")
+                gr.HTML("<p><b>WARNING!</b> <i>This will completely reset the map to only the outline.</i></p>")
                 with gr.Row():                  
                     close_btn = gr.Button('Close Polygon') # Changes to Open Polygon when closed
                     clear_btn = gr.Button('Clear Points')
                 with gr.Row():
                     poly_add_land_btn = gr.Button('Fill with land')
                     poly_add_sea_btn = gr.Button('Fill with water')
-                    shape_poly_regen_area_btn = gr.Button('Regenerate outline in the area')
+                    shape_poly_regen_area_btn = gr.Button('Regenerate outline in the drawn area')
             edit_height_tab = gr.Tab("Height map editor")
             with edit_height_tab:
-                gr.HTML("<p> Click to draw an area that should be changed\n <b>WARNING!</b> <i>This will completely erase existing cities and roads.</i></p>")
+                gr.HTML("<h3>Edit the generated height map</h3>")
+                gr.HTML("<p> Click to add points to draw a polygon and close the polygon before changing the area</p>")
+                gr.HTML("<p><b>WARNING!</b> <i>This will completely erase existing cities and roads.</i></p>")
                 with gr.Row():                  
                     h_close_btn = gr.Button('Close Polygon') # Changes to Open Polygon when closed
                     h_clear_btn = gr.Button('Clear Points')
@@ -206,6 +210,7 @@ with gr.Blocks() as demo:
                     
             edit_town_tab = gr.Tab("Town editor")
             with edit_town_tab:
+                gr.HTML("<h3>Move the towns</h3>")
                 town_to_move = gr.Dropdown([], label='Select a town and click on the canvas to move it there.')
                 @towns_state.change(
                     inputs=[towns_state],
