@@ -15,17 +15,29 @@ from src.gradio.gradio_configs import CLOSE_ICON
 from src.gradio.path_finder import AStar, GreedyBestFirst, BridgeEuclideanHeuristic
 
 from src.gradio.town_generator import TownGenerator
+from src.gradio.height_shape_generator import HeightShapeGenerator
 
+# Used to store downloadable files, Note! This won't work with multiple users
+GRADIO_TMP_DATA_FOLDER='data/gradio_tmp'
+os.makedirs(GRADIO_TMP_DATA_FOLDER, exist_ok=True)
+
+RESOLUTION=2000
 
 # Run app with example data (True) or not (False)
-USE_EXAMPLE_DATA = True
+USE_EXAMPLE_DATA = False
 EXAMPLE_DATA_PATH = 'assets/defaults/example_data'
 
 # Query parameters
 SHAPE_SIZE_MIN = 0.0
 SHAPE_SIZE_MAX = 0.5
 DDIM_STEPS_MIN = 10
-DDIM_STEPS_MAX = 200
+DDIM_STEPS_MAX = 500
+TOWN_REPEL_MIN = 0.25
+TOWN_REPEL_MAX = 5.0
+
+
+ddim_file = np.load('assets/possible_ddim_schedules.npy').astype(bool)
+AVAILABLE_DDIMS = np.where(ddim_file)[0]
     
 with gr.Blocks() as demo:
 
@@ -33,16 +45,21 @@ with gr.Blocks() as demo:
     town_name_sampler = gr.State(TownNameSampler)
     # state to keep track of the generation method
     town_generation_method = gr.State('Random')
-    
-    # Town generator object
-    town_generator = TownGenerator(config_path = "out/city_gen/config.yaml",
-                                   model_config_path="out/city_gen/model_config.yaml",
-                                   checkpoint_path="out/city_gen/checkpoint.ckpt")
 
+    if not USE_EXAMPLE_DATA:
+        height_shape_generator = HeightShapeGenerator()
+        town_generator = TownGenerator(
+            config_path="out/city_gen/config.yaml", 
+            model_config_path="out/city_gen/model_config.yaml", 
+            checkpoint_path="out/city_gen/checkpoint.ckpt"
+        )
+    
+        
     # current states
     shape_state = gr.State(None)
     height_map_state = gr.State(None)
     towns_state = gr.State(list)
+    towns_to_connect_state = gr.State(list)
     roads_state = gr.State(RoadGraph.empty)
     current_map_image = gr.State(None) # TODO: Cache the map wo polygon plotted a better way
     
@@ -51,51 +68,58 @@ with gr.Blocks() as demo:
     
     example_data_nr = gr.State(None)
 
-    title = gr.HTML("<h1>Fantasy map generator</h1>")
-    description = gr.HTML("""
-        <p>Generate a fantasy map with islands, towns, and roads.</p>
-        <p>Generate elements in the the order: shape -> heights -> towns -> roads</p>
-        <p>In each iteration process click on the map to manually augment the map.</p>
-    """)
+    canvas_edit_mode = gr.State('shape')
 
+    town_updater = gr.State(2) # TODO: Very big hack, but I want to sleep
+    
     with gr.Row():
 
         # config column
         with gr.Column(scale = 2):
+            title = gr.HTML("<h1>Map generator</h1>")
             with gr.Row():
                 # ----------------------------- Shape generation ----------------------------- #
                 with gr.Column():
-                    with gr.Accordion('Shape config', open=False):
-                        shape_size_slider = gr.Slider(value=0.5, label='Island Size', minimum=0.0, maximum=1.0, step=0.01, interactive=True)
-                        shape_quality_slider = gr.Slider(value=1.0, label='Generation Speed(0) vs Quality(1)', minimum=0.0, maximum=1.0, step=0.01, interactive=True)
-                    run_generate_shape_button = gr.Button('Generate Shape')
+                    run_generate_shape_button = gr.Button('Generate map outline')
+                    with gr.Accordion('Advanced outline config', open=False):
+                        with gr.Row():
+                            manual_shape_size = gr.Checkbox(value=False, label='Manually query shape size', interactive=True)
+                            shape_size_slider = gr.Slider(value=0.4, label='Island Size', info='Choose a higher number for larger', minimum=0.0, maximum=1.0, step=0.01, visible=False, interactive=False)
+                            @manual_shape_size.input(inputs=[manual_shape_size, shape_size_slider], outputs=[shape_size_slider])
+                            def _enable_shape_slider(checked: bool, value: float):
+                                if checked:
+                                    return gr.Slider(value=value, label='Island Size', info='Choose a higher number for larger', minimum=0.0, maximum=1.0, step=0.01, interactive=True, visible=True)
+                                else:
+                                    return gr.Slider(value=value, label='Island Size', info='Choose a higher number for larger', minimum=0.0, maximum=1.0, step=0.01, visible=False, interactive=False)
+                                    
+                        shape_quality_slider = gr.Slider(value=0.4, label='Generation Quality', info='Higher value means better quality but slower generation.', minimum=0.0, maximum=1.0, step=0.01, interactive=True)
                 
                 # --------------------------- Height map generation -------------------------- #
                 
                 with gr.Column():
-                    with gr.Accordion('Height Map config', open=False):
-                        height_quality_slider = gr.Slider(value=1.0, label='Generation Speed(0) vs Quality(1)', minimum=0.0, maximum=1.0, step=0.01, interactive=True)
                     run_generate_height_map_button = gr.Button('Generate Height Map')
+                    with gr.Accordion('Advanced height map config', open=True):
+                        height_quality_slider = gr.Slider(value=0.5, label='Generation Quality', info='Higher value means better quality but slower generation.', minimum=0.0, maximum=1.0, step=0.01, interactive=True)
 
                 # ------------------------------ Town generation ----------------------------- #
                 with gr.Column():
-                    with gr.Accordion('Town config', open=False):
-                        # with gr.Tab('Random') as town_config_random_tab:
-                            # town_config_random_num_town_slider = gr.Slider(value=5, label='Number of Towns to Add', minimum=1, maximum=30, step=1, interactive=True)
-                            # @town_config_random_tab.select(outputs=[town_generation_method])
-                            # def _(): return 'Random'
-                        # with gr.Tab('Custom') as town_config_custom_tab:
+                    with gr.Row():
+                        run_generate_town_button = gr.Button('Generate Town(s)', scale = 3)
+                        reset_town_button = gr.Button('Remove all Towns', scale=2, variant='secondary')
+                    with gr.Accordion('Set town types and more', open=True):
                         town_config_random_num_town_slider = gr.Slider(value=5, label='Number of Towns to Add', minimum=1, maximum=30, step=1, interactive=True)
-                        town_config_custom_town_type_radio = gr.Radio([("Random", "random")] + [(c.capitalize(), c) for c in TOWN_TYPES], value='random', label='Town Type', interactive=True)
-                        town_config_custom_town_feature_radio = gr.Radio([('Random','random'), ('Coastal','coastal'), ('Inland','inland')], value = 'random', label='Town Features', interactive = True)
-                        # @town_config_custom_tab.select(outputs=[town_generation_method])
-                        # def _(): return 'Custom'
-                        reset_town_button = gr.Button('Reset Towns')
-                    run_generate_town_button = gr.Button('Generate Town(s)')
-
+                        
+                        with gr.Row():
+                            town_config_custom_town_type_radio = gr.Radio([("Random", "random")] + [(c.capitalize(), c) for c in TOWN_TYPES], value='random', label='Town Type', interactive=True)
+                            town_config_custom_town_feature_radio = gr.Radio([('Random','random'), ('Coastal','coastal'), ('Inland','inland')], value = 'random', label='Town Features', interactive = True)
+                        town_repel_slider = gr.Slider(value=0, label='Spacing Strength', info='Higher values means cities are more likely to be spaced further from each other.', minimum=0.0, maximum=1.0, step=0.01, interactive=True, visible=True)
+                
                 # ------------------------------ Road generation ----------------------------- #
                 with gr.Column():
-                    with gr.Accordion('Road config', open=False):
+                    with gr.Row():
+                        run_generate_road_button = gr.Button('Connect towns with roads', scale = 3)
+                        reset_roads_button = gr.Button('Remove all roads', scale = 2)
+                    with gr.Accordion('Set towns to connect and more', open=True):
                         # which towns to connect
                         with gr.Accordion('Towns to connect'):
                             @gr.render(inputs=[towns_state], triggers=[towns_state.change])
@@ -104,45 +128,44 @@ with gr.Blocks() as demo:
                                     gr.Markdown('No towns to connect')
                                 else:
                                     for i, town in enumerate(towns):
-                                        # TODO: add checkbox to select town and figure out how dynamic inputs work
-                                        # https://www.gradio.app/guides/dynamic-apps-with-render-decorator
-                                        # https://www.gradio.app/docs/gradio/checkbox
-                                        with gr.Row():
-                                            checkbox = gr.Checkbox(value=False, label='', interactive=True, show_label=False, container=False, scale=1, min_width=100)
-                                            text_box = gr.Textbox(value=town['town_name'], lines=1, max_lines=1, interactive=True, show_label=False, container=False, scale=5)
 
-                                            # towns_state[i]['town_name'] = text_box.value
-                                            # towns_state[i]['connect'] = checkbox.value
-                                            #gr.ClearButton(text_box, value=None, size='sm', icon=CLOSE_ICON, scale=1, min_width=10)
-                        reset_roads_button = gr.Button('Reset Roads')
+                                        with gr.Row():
+                                            checkbox = gr.Checkbox(value=False, label='', interactive=True, show_label=False, container=False, scale=1, min_width=1000)                                            
+                                            text_box = gr.Textbox(value=town['town_name'], lines=1, max_lines=1, interactive=False, show_label=False, container=False, scale=5)
+                                            def add_town_to_connect(connect: bool, towns: list, town_name: str):
+                                                if connect:
+                                                    if not town_name in towns:
+                                                        towns.append(town_name)
+                                                else:
+                                                    if town_name in towns:
+                                                        towns.remove(town_name)
+                                                return towns
+                                            checkbox.input(add_town_to_connect, inputs=[checkbox, towns_to_connect_state, text_box], outputs=[towns_to_connect_state])
                         
-                        with gr.Accordion('Road Cost Config', open=False):
-                            road_config_road_cost = gr.Number(1, label='Road Cost')
-                            road_config_slope_factor = gr.Number(1, label='Max Slope Cost Factor')
+                        with gr.Accordion('Advanced: Adjust cost factors', open=False):
+                            road_config_road_cost = gr.Number(1, label='Distance Cost')
+                            road_config_slope_factor = gr.Number(10, label='Max Slope Cost Factor')
                             road_config_bridge_factor = gr.Number(100, label='Bridge Cost Factor')
-                    run_generate_road_button = gr.Button('Generate Road')
-            # --------------------------- Polygon shape change --------------------------- #
-            with gr.Accordion('Shape Editor    (Warning! Will change height and reset towns+roads)'):
-                with gr.Row():                  
-                    close_btn = gr.Button('Close Polygon') # Changes to Open Polygon when closed
-                    clear_btn = gr.Button('Clear Points')
-                with gr.Row():
-                    poly_add_land_btn = gr.Button('Add Land')
-                    poly_add_sea_btn = gr.Button('Add Sea')
-                    poly_regen_area_btn = gr.Button('Regenerate Area')
-                    
+                                        
         # -------------------------------- Display map ------------------------------- #
         with gr.Column(scale = 3):
             with gr.Tab('Map'):
                 output_image = gr.Image(
-                    value=plot_map(return_step='empty'),
+                    value=plot_map(return_step='empty', resolution=RESOLUTION),
                     label='Map',
                     interactive=False,
                     image_mode='RGB',
-                    show_download_button=False)                
+                    show_download_button=False
+                    )                
                 with gr.Row():
-                    gr.DownloadButton('Download PNG')
-                    gr.DownloadButton('Download JSON')
+                    def download_map(current_map_image):
+                        if current_map_image is None:
+                            current_map_image = plot_map(return_step='empty', resolution=RESOLUTION)
+                        save_path = os.path.join(GRADIO_TMP_DATA_FOLDER,'gradio_tmp.png')
+                        bgr_im = cv2.cvtColor(current_map_image, cv2.COLOR_RGB2BGR)
+                        cv2.imwrite(save_path, bgr_im)
+                        return save_path
+                    gr.DownloadButton('Download PNG', value=download_map, inputs=current_map_image)
                 
             with gr.Tab('3d Mesh'):
                 output_mesh_hm = gr.Model3D(
@@ -150,77 +173,227 @@ with gr.Blocks() as demo:
                         interactive=False
                     )
                 generate_mesh_button = gr.Button('Generate 3D Mesh')
-                gr.DownloadButton('Download 3D Mesh')
-    
+                mesh_download_btn = gr.DownloadButton('Download 3D Mesh')
+                @mesh_download_btn.click(
+                    inputs=[output_mesh_hm],
+                    outputs=[mesh_download_btn])
+                def download_mesh(output_mesh_path):
+                    if output_mesh_path is None: 
+                        gr.Warning('No mesh generated yet, please generate before downloading')
+                    return output_mesh_path
+                
+            # ----------------------------- Intervention Tabs ---------------------------- #
+            gr.HTML("<H2>Edit the generated landscape</H2><p>Click on the map to edit the landscape</p>")
+            edit_shape_tab = gr.Tab('Outline editor')
+            with edit_shape_tab:
+                gr.HTML("<h3>Edit the generated outline</h3>")
+                gr.HTML("<p>Click to add points to draw a polygon and close the polygon before changing the area</p>")
+                gr.HTML("<p><b>WARNING!</b> <i>This will completely reset the map to only the outline.</i></p>")
+                with gr.Row():                  
+                    close_btn = gr.Button('Close Polygon') # Changes to Open Polygon when closed
+                    clear_btn = gr.Button('Clear Points')
+                with gr.Row():
+                    poly_add_land_btn = gr.Button('Fill with land')
+                    poly_add_sea_btn = gr.Button('Fill with water')
+                    shape_poly_regen_area_btn = gr.Button('Regenerate outline in the drawn area')
+            edit_height_tab = gr.Tab("Height map editor")
+            with edit_height_tab:
+                gr.HTML("<h3>Edit the generated height map</h3>")
+                gr.HTML("<p> Click to add points to draw a polygon and close the polygon before changing the area</p>")
+                gr.HTML("<p><b>WARNING!</b> <i>This will completely erase existing cities and roads.</i></p>")
+                with gr.Row():                  
+                    h_close_btn = gr.Button('Close Polygon') # Changes to Open Polygon when closed
+                    h_clear_btn = gr.Button('Clear Points')
+                with gr.Row():
+                    height_poly_regen_area_btn = gr.Button('Regenerate only heights in the drawn area')
+                    shape_height_poly_regen_area_btn = gr.Button('Regenerate outline and heights in the drawn area')
+                    
+            edit_town_tab = gr.Tab("Town editor")
+            with edit_town_tab:
+                gr.HTML("<h3>Move the towns</h3>")
+                town_to_move = gr.Dropdown([], label='Select a town and click on the canvas to move it there.')
+                @towns_state.change(
+                    inputs=[towns_state],
+                    outputs=[town_to_move])
+                def _dd(towns):
+                    towns = [town['town_name'] for town in towns]
+                    return gr.update(choices=towns)
+                
+
     # ---------------------------------------------------------------------------- #
     #                                     utils                                    #
     # ---------------------------------------------------------------------------- #
     def scale_value(value, min_value, max_value, dtype: Literal['float', 'int']='float'):
-        scaled_value = (value - min_value) / (max_value - min_value)
+        scaled_value = min_value + (value * (max_value - min_value))
         if dtype == 'int':
             return int(scaled_value)
         return scaled_value
-            
+    
+    def find_ddim(value, min_value, max_value, available_values=AVAILABLE_DDIMS):
+        ddim = scale_value(value, min_value, max_value, 'int')
+        closest_ddim = available_values[np.abs(available_values - ddim).argmin()]
+        return closest_ddim
+    
+    def scale_points_canvas_to_model_size(points_xy:np.ndarray, model_img_shape_hw:tuple):
+        """
+        points_xy: np.ndarray, shape=(n, 2)
+        """
+        w,h = model_img_shape_hw
+        transformed_points = np.array([
+            points_xy[:, 0] * w / RESOLUTION,
+            points_xy[:, 1] * h / RESOLUTION
+        ]).T.astype(int)
+        return transformed_points
+    
+    def create_polygon_mask(unscaled_poly_points, shape: np.ndarray):
+        scaled_poly_points = scale_points_canvas_to_model_size(np.array(unscaled_poly_points), shape.shape)
+        scaled_poly_points = scaled_poly_points.reshape((-1, 1, 2))
+        polygon_mask = np.zeros_like(shape, dtype=np.uint8)
+        polygon_mask = cv2.fillPoly(polygon_mask, [scaled_poly_points], 1)
+        return polygon_mask
+    
+    def uniform_to_height(u: np.ndarray, *, mean: float = 300.0) -> np.ndarray:
+        """
+        Transform uniform samples to height samples
+        u ~ U(0, 1)
+        height ~ Exp(mean)
+        """
+        return - mean * np.log(1 - u)
+    
+    def height_to_uniform(height: np.ndarray, *, mean: float = 300.0) -> np.ndarray:
+        """
+        Transform height samples to uniform samples
+        height ~ Exp(mean)
+        u ~ U(0, 1)
+        """
+        return 1 - np.exp(-height / mean)
+    
+    @town_updater.change(
+        inputs=[shape_state, height_map_state, towns_state, roads_state],
+        outputs=[output_image, current_map_image])
+    def plot_map_after_town_update(shape, height_map, towns, roads):
+        if roads != RoadGraph.empty():
+            return_step = 'roads'
+        else:
+            return_step = 'towns'
+        chart = plot_map(shape, height_map, towns, roads, return_step=return_step, resolution=RESOLUTION)
+        return chart, chart
+
+    # ---------------------------------------------------------------------------- #
+    #                             Canvas Interventions                             #
+    # ---------------------------------------------------------------------------- #
+    edit_modes =['shape', 'height', 'town']
+    @edit_shape_tab.select(
+        outputs=[canvas_edit_mode])
+    @edit_height_tab.select(
+        outputs=[canvas_edit_mode])
+    @edit_town_tab.select(
+        outputs=[canvas_edit_mode])
+    def change_edit_mode(evt: gr.SelectData):
+        return edit_modes[evt.index]
+
+    
+    @output_image.select(
+        inputs=[canvas_edit_mode,
+                shape_state,
+                poly_points_state, 
+                poly_closed_state, 
+                town_to_move, 
+                towns_state,
+                height_map_state, 
+                town_updater],
+        outputs=[poly_points_state, towns_state, town_updater])
+    def canvas_interaction(edit_mode: str,
+                           shape: np.ndarray,
+                           poly_points: list, 
+                           poly_closed: bool, 
+                           town_to_move_name: str, 
+                           towns: list, 
+                           height_map: np.ndarray,
+                           town_updater, 
+                           evt: gr.SelectData):
+        if shape is not None:            
+            if edit_mode == 'shape' or edit_mode == 'height':
+                # Note: poly points aren't stored in downscaled form
+                poly_points = add_point(poly_points, poly_closed, evt.index)
+            elif edit_mode == 'town' and height_map is not None:
+                scaled_click_point_xy = scale_points_canvas_to_model_size(np.array(evt.index)[None], shape.shape)[0]
+                for town in towns:
+                    if town['town_name'] == town_to_move_name:
+                        town['xyz'] = [scaled_click_point_xy[0], 
+                                        scaled_click_point_xy[1], 
+                                        height_map[[scaled_click_point_xy[1]], [scaled_click_point_xy[0]]]]
+                        town_updater *= -1
+                        break
+        return poly_points, towns, town_updater
+    
     # ---------------------------------------------------------------------------- #
     #                              Polygon Edit Shape                              #
     # ---------------------------------------------------------------------------- #
     # ------------------------------- Edit polygon ------------------------------- #
-    @output_image.select(
-        inputs=[poly_points_state, poly_closed_state],
-        outputs=[poly_points_state])
-    def add_point(poly_points: list, poly_closed: bool, evt: gr.SelectData):
+    def add_point(poly_points: list, poly_closed: bool, coordinates: tuple):
         if poly_closed:
             gr.Warning("Polygon is closed, to add more points open the polygon!")
             return poly_points
         
-        poly_points.append(evt.index)
+        poly_points.append(coordinates)
         return poly_points
 
-    @close_btn.click(
-        inputs=[poly_closed_state],
+    @h_close_btn.click(
+        inputs=[poly_closed_state, shape_state],
         outputs=[poly_closed_state])
-    def close_polygon(poly_closed):
-        if poly_closed:
-            poly_closed = False
+    @close_btn.click(
+        inputs=[poly_closed_state, shape_state],
+        outputs=[poly_closed_state])
+    def close_polygon(poly_closed, shape):
+        if shape is not None:
+            if poly_closed:
+                poly_closed = False
+            else:
+                poly_closed = True
         else:
-            poly_closed = True
+            gr.Warning('No shape generated yet, please generate a shape first!')
         return poly_closed
 
     @poly_closed_state.change(
         inputs=[poly_closed_state],
-        outputs=[close_btn])
+        outputs=[close_btn, h_close_btn])
     def update_close_btn_text(poly_closed):
-        return 'Open Polygon' if poly_closed else 'Close Polygon'
+        return 2 * ['Open Polygon' if poly_closed else 'Close Polygon']
     
     # ------------------------------- Clear points ------------------------------- #
+    @h_clear_btn.click(
+        inputs=[poly_points_state],
+        outputs=[poly_points_state, poly_closed_state])
     @current_map_image.change(
         inputs=[poly_points_state],
-        outputs=[poly_points_state, poly_closed_state, close_btn])
+        outputs=[poly_points_state, poly_closed_state])
     @clear_btn.click(
         inputs=[poly_points_state],
-        outputs=[poly_points_state, poly_closed_state, close_btn])
+        outputs=[poly_points_state, poly_closed_state])
     @output_image.clear(
         inputs=[poly_points_state],
-        outputs=[poly_points_state, poly_closed_state, close_btn])
+        outputs=[poly_points_state, poly_closed_state])
     def clear_points(points: list):
         points.clear()
         return points, False, 'Close Polygon'
+    
     # ------------------------------ Add/remove area ----------------------------- #
-    # TODO THIS FUNCTION IS SUPER BAD; A LOT GETS RERUN MULTIPLE TIMES BUT I NEED SLEEP OKAY
-    # THIS FUNCTION WILL BE REVAMPED WHEN MODELS ARE IMPLEMENTED
     @poly_add_land_btn.click(
         inputs=[shape_state,
                 height_map_state,
                 towns_state,
+                towns_to_connect_state,
                 roads_state,
                 poly_points_state, 
                 poly_closed_state,
                 current_map_image,
                 output_image,
-                gr.State('add')], # TODO: Hotfix for now
+                gr.State('add')],
         outputs=[shape_state,
                  height_map_state,
                  towns_state,
+                 towns_to_connect_state,
                  roads_state,
                  poly_points_state, 
                  poly_closed_state,
@@ -230,6 +403,7 @@ with gr.Blocks() as demo:
         inputs=[shape_state,
                 height_map_state,
                 towns_state,
+                towns_to_connect_state,
                 roads_state,
                 poly_points_state, 
                 poly_closed_state,
@@ -239,6 +413,7 @@ with gr.Blocks() as demo:
         outputs=[shape_state,
                  height_map_state,
                  towns_state,
+                 towns_to_connect_state,
                  roads_state,
                  poly_points_state, 
                  poly_closed_state,
@@ -247,6 +422,7 @@ with gr.Blocks() as demo:
     def add_subtract_area(shape_mask: np.ndarray,
                           height_map: np.ndarray,
                           towns: list,
+                          towns_to_connect: list,
                           roads: RoadGraph,
                           poly_points: list, 
                           poly_closed: bool,
@@ -255,32 +431,149 @@ with gr.Blocks() as demo:
                           mode: Literal['add', 'subtract']):
         if not poly_closed:
             gr.Warning('Polygon is not closed, please close the polygon first!')
-            return shape_mask, height_map, towns, roads, poly_points, poly_closed, high_res_image, display_image
-        # TODO: We can keep it in one resolution instead of this up and down scaling
-        scale_factor =  shape_mask.shape[0] / high_res_image.shape[0]
-        scaled_poly_points = np.array(poly_points) * scale_factor
-        
-        scaled_poly_points = np.array(scaled_poly_points, dtype=np.int32).reshape((-1, 1, 2))
-        
-        # Create a mask for the polygon
-        polygon_mask = np.zeros_like(shape_mask, dtype=np.uint8)
-        # Fill the polygon on the mask
-        polygon_mask = cv2.fillPoly(polygon_mask, [scaled_poly_points], 1)
+            return shape_mask, height_map, towns, towns_to_connect, roads, poly_points, poly_closed, high_res_image, display_image
+        if len(poly_points) < 3:
+            gr.Warning('Polygon needs at least 3 points!')
+            return shape_mask, height_map, towns, towns_to_connect, roads, poly_points, poly_closed, high_res_image, display_image
+    
+        polygon_mask = create_polygon_mask(poly_points, shape_mask)
         
         if mode == 'add':
             shape_mask[polygon_mask == 1] = 1
         elif mode == 'subtract':
             shape_mask[polygon_mask == 1] = 0
-        chart = plot_map(shape=shape_mask, height_map=None, towns=None, roads=None, return_step='shape')
+        chart = plot_map(shape=shape_mask, height_map=None, towns=None, roads=None, return_step='shape', resolution=RESOLUTION)
         
         # Reset town and roads
-        return shape_mask, None, list(), RoadGraph.empty(), [], False, chart, chart
+        return shape_mask, None, list(), list(), RoadGraph.empty(), [], False, chart, chart
+
+        # ------------------------------ Regenerate area ----------------------------- #     
+    @shape_poly_regen_area_btn.click(
+        inputs=[shape_state,
+                height_map_state,
+                towns_state,
+                towns_to_connect_state,
+                roads_state,
+                poly_points_state, 
+                poly_closed_state, 
+                current_map_image, 
+                output_image],
+        outputs=[shape_state,
+                 height_map_state,
+                 towns_state,
+                 towns_to_connect_state,
+                 roads_state,
+                 current_map_image, 
+                 output_image])
+    def infill_shape(shape:np.ndarray, 
+                     height_map: Optional[np.ndarray],
+                     towns_state: Optional[list],
+                     towns_to_connect: Optional[list],
+                     roads: Optional[RoadGraph],
+                     poly_points: list, 
+                     poly_closed: bool, 
+                     generated_map: np.ndarray, 
+                     display_map: np.ndarray):
+        if USE_EXAMPLE_DATA:
+            gr.Warning('Example data not supported for this feature!')
+            return shape, height_map, towns_state, towns_to_connect, roads, generated_map, display_map
+        if not poly_closed or len(poly_points) < 3:
+            gr.Warning('Polygon needs to be closed and have at least 3 points!')
+            return shape, height_map, towns_state, towns_to_connect, roads, generated_map, display_map
+        
+        polygon_mask = np.logical_not(create_polygon_mask(poly_points, shape)).astype(np.uint8)
+        regenerated_shape = height_shape_generator.regenerate_shape(shape, polygon_mask, batch_size=1).squeeze(0)
+        
+        chart = plot_map(shape=regenerated_shape, height_map=None, towns=None, roads=None, return_step='shape', resolution=RESOLUTION)
+        return regenerated_shape, None, list(), list(), RoadGraph.empty(), chart, chart
+
+
+    @height_poly_regen_area_btn.click(
+        inputs=[shape_state,
+                height_map_state,
+                towns_state,
+                towns_to_connect_state,
+                roads_state,
+                poly_points_state, 
+                poly_closed_state, 
+                current_map_image, 
+                output_image],
+        outputs=[shape_state,
+                 height_map_state,
+                 towns_state,
+                 towns_to_connect_state,
+                 roads_state,
+                 current_map_image, 
+                 output_image])
+    def infill_height(shape:np.ndarray, 
+                     height_map: Optional[np.ndarray],
+                     towns_state: Optional[list],
+                     towns_to_connect: Optional[list],
+                     roads: Optional[RoadGraph],
+                     poly_points: list, 
+                     poly_closed: bool, 
+                     generated_map: np.ndarray, 
+                     display_map: np.ndarray):
+        if USE_EXAMPLE_DATA:
+            gr.Warning('Example data not supported for this feature!')
+            return shape, height_map, towns_state, towns_to_connect, roads, generated_map, display_map
+        if not poly_closed or len(poly_points) < 3:
+            gr.Warning('Polygon needs to be closed and have at least 3 points!')
+            return shape, height_map, towns_state, towns_to_connect, roads, generated_map, display_map
+        # Make shape into binary mask
+        bin_shape = shape > 0.5
+        
+        polygon_mask = np.logical_not(create_polygon_mask(poly_points, bin_shape)).astype(np.uint8)
+        regenerated_height = height_shape_generator.regenerate_height(height_to_uniform(height_map), bin_shape, polygon_mask, batch_size=1).squeeze(0)
+        regenerated_height = uniform_to_height(regenerated_height)
+
+        chart = plot_map(shape=shape, height_map=regenerated_height, towns=None, roads=None, return_step='height_map', resolution=RESOLUTION)
+        return shape, regenerated_height, list(), list(), RoadGraph.empty(), chart, chart
     
-    @poly_regen_area_btn.click(
-        inputs=[],
-        outputs=[])
-    def regen_area():
-        gr.Warning('Not implemented yet, coming soon!')
+    
+    @shape_height_poly_regen_area_btn.click(
+        inputs=[shape_state,
+                height_map_state,
+                towns_state,
+                towns_to_connect_state,
+                roads_state,
+                poly_points_state, 
+                poly_closed_state, 
+                current_map_image, 
+                output_image],
+        outputs=[shape_state,
+                 height_map_state,
+                 towns_state,
+                 towns_to_connect_state,
+                 roads_state,
+                 current_map_image, 
+                 output_image])
+    def infill_shape_and_height(shape:np.ndarray, 
+                     height_map: Optional[np.ndarray],
+                     towns_state: Optional[list],
+                     towns_to_connect: Optional[list],
+                     roads: Optional[RoadGraph],
+                     poly_points: list, 
+                     poly_closed: bool, 
+                     generated_map: np.ndarray, 
+                     display_map: np.ndarray):
+        if USE_EXAMPLE_DATA:
+            gr.Warning('Example data not supported for this feature!')
+            return shape, height_map, towns_state, towns_to_connect, roads, generated_map, display_map
+        if not poly_closed or len(poly_points) < 3:
+            gr.Warning('Polygon needs to be closed and have at least 3 points!')
+            return shape, height_map, towns_state, towns_to_connect, roads, generated_map, display_map
+        
+        bin_shape = shape > 0.5
+        polygon_mask = np.logical_not(create_polygon_mask(poly_points, bin_shape)).astype(np.uint8)
+        regenerated_shape, regenerated_height = height_shape_generator.regenerate_shape_and_height(bin_shape, height_to_uniform(height_map), polygon_mask, batch_size=1)
+        regenerated_shape = regenerated_shape.squeeze(0)
+        regenerated_height = regenerated_height.squeeze(0)
+        regenerated_height = uniform_to_height(regenerated_height)
+        chart = plot_map(shape=regenerated_shape, height_map=regenerated_height, towns=None, roads=None, return_step='height_map', resolution=RESOLUTION)
+        
+        return regenerated_shape, regenerated_height, list(), list(), RoadGraph.empty(), chart, chart
+        
     
     # ------------------------------ Update display ------------------------------ #
     @poly_points_state.change(
@@ -303,7 +596,7 @@ with gr.Blocks() as demo:
         generated_map: Optional[np.ndarray] = None
     ) -> dict:
         polygon_dict = {'poly_points': poly_points, 'poly_closed': poly_closed}
-        chart = plot_map(shape=None, height_map=None, towns=None, roads=None, return_step='change_poly_shape', polygon_dict=polygon_dict, current_map=generated_map)
+        chart = plot_map(shape=None, height_map=None, towns=None, roads=None, return_step='change_poly_shape', polygon_dict=polygon_dict, current_map=generated_map, resolution=RESOLUTION)
 
         return chart
     
@@ -314,66 +607,88 @@ with gr.Blocks() as demo:
     @run_generate_shape_button.click(
         inputs=[
             shape_size_slider,
-            shape_quality_slider,
-            shape_state],
+            manual_shape_size,
+            shape_quality_slider],
         outputs=[
             shape_state,
+            height_map_state,
+            towns_state,
+            towns_to_connect_state,
+            roads_state,
             current_map_image,
             output_image,
             example_data_nr])
     def generate_shape(
         size: float,
+        manual_size: bool,
         quality: float,
-        shape: Optional[np.ndarray]
-    ) -> dict:
+        *,
+        only_generate: bool = False 
+        ) -> dict:
         example_data_nr = None
-
+        if manual_size:
+            shape_size = scale_value(size, SHAPE_SIZE_MIN, SHAPE_SIZE_MAX)
+        else:
+            shape_size = None
+        ddim_steps = find_ddim(quality, DDIM_STEPS_MIN, DDIM_STEPS_MAX)
+        
         if USE_EXAMPLE_DATA:
             files = os.listdir(os.path.join(EXAMPLE_DATA_PATH, 'shapes'))
             example_data_nr = random.randint(0, len(files) - 1)
             shape_path = os.path.join(EXAMPLE_DATA_PATH, 'shapes', f'shape_{example_data_nr}.npy')
             shape = np.load(shape_path)
-            
-        shape_size = scale_value(size, SHAPE_SIZE_MIN, SHAPE_SIZE_MAX)
-        ddim_steps = scale_value(quality, DDIM_STEPS_MIN, DDIM_STEPS_MAX)
-        chart = plot_map(shape=shape, height_map=None, towns=None, roads=None, return_step='shape')
-        return shape, chart, chart, example_data_nr
+        else:
+            shape = height_shape_generator.generate_shape(shape_size, ddim_steps, batch_size=1).squeeze(0)
+        
+        if not only_generate:
+            chart = plot_map(shape=shape, height_map=None, towns=None, roads=None, return_step='shape', resolution=RESOLUTION)
+            return shape, None, list(), list(), RoadGraph.empty(), chart, chart, example_data_nr
+        else:
+            return shape, None, None, None, None, None, None, None
 
     # --------------------------- Height map generation -------------------------- #
     @run_generate_height_map_button.click(
         inputs=[
             shape_state,
+            manual_shape_size,
+            shape_quality_slider,
             height_quality_slider,
             example_data_nr],
         outputs=[
+            shape_state,
             height_map_state,
+            towns_state,
+            towns_to_connect_state,
+            roads_state,
             current_map_image,
             output_image])
     def generate_height_map(
         shape: np.ndarray,
+        manual_shape_size: bool,
+        size: float,
         quality: float,
         example_data_nr: int,
         *,
         only_generate: bool = False
     ) -> dict:
-        def uniform_to_height(u: np.ndarray, *, mean: float = 300.0) -> np.ndarray:
-            """
-            Transform uniform samples to height samples
-            u ~ U(0, 1)
-            height ~ Exp(mean)
-            """
-            return - mean * np.log(1 - u)
+        if shape is None:
+            shape = generate_shape(manual_shape_size, size, quality, only_generate=True)[0]
+        ddim_steps = find_ddim(quality, DDIM_STEPS_MIN, DDIM_STEPS_MAX)
         if USE_EXAMPLE_DATA:
             height_map = np.load(os.path.join(EXAMPLE_DATA_PATH, 'heights', f'height_{example_data_nr}.npy'))
             height_map = uniform_to_height(height_map)
             height_map[shape == 0] = -1
+        else:
+            bin_shape = shape > 0.5
+            height_map = height_shape_generator.generate_height(bin_shape, ddim_steps, batch_size=1).squeeze(0)
+            height_map = uniform_to_height(height_map)
+            height_map[bin_shape == 0] = -1
             
-        ddim_steps = scale_value(quality, DDIM_STEPS_MIN, DDIM_STEPS_MAX)
         if only_generate:
-            return height_map
-        chart = plot_map(shape, height_map, towns=None, roads=None, return_step='height_map')
+            return height_map, None, None, None, None, None, None
+        chart = plot_map(shape, height_map, towns=None, roads=None, return_step='height_map', resolution=RESOLUTION)
 
-        return height_map, chart, chart
+        return shape, height_map, list(), list(), RoadGraph.empty(), chart, chart
 
     # ---------------------------------- 3D mesh --------------------------------- #
     @generate_mesh_button.click(
@@ -385,7 +700,7 @@ with gr.Blocks() as demo:
         if height_map is None:
             gr.Warning('No height map generated yet, please generate a height map first!')
             return None
-        output_path = 'assets/defaults/terrain_mesh.obj'
+        output_path = os.path.join(GRADIO_TMP_DATA_FOLDER, 'terrain_mesh.obj')
         output_path = heightmap_to_3d_mesh(height_map, output_path=output_path)
         return output_path
 
@@ -397,10 +712,12 @@ with gr.Blocks() as demo:
             towns_state,
             roads_state,
             town_name_sampler,
-            # town_generation_method,
             town_config_random_num_town_slider,
             town_config_custom_town_type_radio,
-            town_config_custom_town_feature_radio],
+            town_config_custom_town_feature_radio,
+            town_repel_slider,
+            current_map_image,
+            output_image],
         outputs=[
             towns_state,
             town_name_sampler,
@@ -412,36 +729,19 @@ with gr.Blocks() as demo:
         towns: List[dict],
         roads: RoadGraph,
         name_sampler: TownNameSampler,
-        # generation_method: Literal['Random', 'Custom'],
         num_towns: int,
         town_type: TOWN_TYPE,
-        town_config: List[str]
+        town_config: List[str],
+        town_repel: float,
+        current_map: np.ndarray,
+        display_map: np.ndarray
     ) -> dict:
+        if height_map is None:
+            gr.Warning('No height map generated yet, please generate a height map first!')
+            return towns, name_sampler, current_map, display_map
+            
         possible_choices = np.where(height_map > 0)
         num_possible = len(possible_choices[0])
-
-        if height_map is None:
-            height_map = generate_height_map
-
-        # if generation_method == 'Random':
-            # for _ in range(num_towns):
-            #     idx = np.random.choice(num_possible)
-            #     z = height_map[possible_choices[0][idx], possible_choices[1][idx]]
-            #     is_coastal = np.random.choice([True, False])
-            #     town_type = np.random.choice(TOWN_TYPES)
-                
-            #     towns.append(
-            #         Town(
-            #             town_type=town_type,
-            #             is_coastal=is_coastal,
-            #             xyz=[possible_choices[1][idx], possible_choices[0][idx], z],
-            #             town_name=name_sampler.pop(town_type, is_coastal)))
-
-        # elif generation_method == 'Custom':
-            # import pdb; pdb.set_trace()
-            # is_coastal = 'is_coastal' in town_config
-            # idx = np.random.choice(num_possible)
-            # z = height_map[possible_choices[0][idx], possible_choices[1][idx]]
             
         if town_type == 'random':
             town_types = np.random.choice(TOWN_TYPES, num_towns, replace=True)
@@ -455,19 +755,25 @@ with gr.Blocks() as demo:
         else:
             is_coastals = [False] * num_towns
             
-        # new_types = [town_type] * 10
-        # new_is_coastals = ['is_coastal' in town_config] * 10
         new_names = [name_sampler.pop(town_type, is_coastal) for town_type, is_coastal in zip(town_types, is_coastals)]
         
-        towns = town_generator.generate(height_map, towns, new_names, town_types, is_coastals)
-            # towns.append(
-            #     Town(
-            #         town_type = town_type,
-            #         is_coastal = is_coastal,
-            #         xyz = [possible_choices[1][idx], possible_choices[0][idx], z],
-            #         town_name = name_sampler.pop(town_type, is_coastal)))
-        
-        chart = plot_map(shape, height_map, towns, roads, return_step='roads' if roads['edges'] else 'towns')
+        if USE_EXAMPLE_DATA:
+            for new_name, town_type, is_coastal in zip(new_names, town_types, is_coastals):
+                idx = np.random.choice(num_possible)
+                x = possible_choices[1][idx]
+                y = possible_choices[0][idx]
+                z = height_map[y, x]
+                towns.append(
+                    Town(
+                        town_type = town_type,
+                        is_coastal = is_coastal,
+                        xyz = [x,y,z],
+                        town_name = new_name))
+        else:
+            repel = scale_value(town_repel, TOWN_REPEL_MIN, TOWN_REPEL_MAX)
+            towns = town_generator.generate(height_map, towns, new_names, town_types, is_coastals, repel)
+
+        chart = plot_map(shape, height_map, towns, roads, return_step='roads' if roads['edges'] else 'towns', resolution=RESOLUTION)
 
         return towns, name_sampler, chart, chart
 
@@ -480,9 +786,13 @@ with gr.Blocks() as demo:
             roads_state,
             road_config_road_cost,
             road_config_slope_factor, 
-            road_config_bridge_factor],
+            road_config_bridge_factor,
+            towns_to_connect_state, 
+            current_map_image,
+            output_image],
         outputs=[
             roads_state,
+            current_map_image,
             output_image])
     def generate_road(
         shape: Optional[shapely.MultiPolygon],
@@ -491,12 +801,17 @@ with gr.Blocks() as demo:
         roads: RoadGraph,
         road_config_road_cost: float,
         road_config_slope_factor: float,
-        road_config_bridge_factor: float
+        road_config_bridge_factor: float,
+        towns_to_connect: List[str],
+        current_map: np.ndarray,
+        display_map: np.ndarray
     ):
-        # Generate RoadGraph for everythiiiiing #TODO: Use the road_config to config which towns to connect
+        if len(towns) == 0 or len(towns_to_connect) < 2:
+            gr.Warning('Need at least 2 towns to connect!')
+            return roads, current_map, display_map
         nodes = {}
         for town in towns:
-            if town["connect"]:
+            if town['town_name'] in towns_to_connect:
                 nodes[town['town_name']] = RoadNode(is_city=True, xyz=town['xyz'])
         
         heuristic = BridgeEuclideanHeuristic(height_map, 
@@ -516,7 +831,8 @@ with gr.Blocks() as demo:
                 edges[f'{town1}-{town2}'] = RoadEdge(line=shapely.LineString(path), connected_nodes=(town1, town2))
         
         road_graph = RoadGraph(nodes=nodes, edges=edges)
-        return road_graph, plot_map(shape, height_map, towns, road_graph, return_step='roads')
+        chart = plot_map(shape, height_map, towns, road_graph, return_step='roads', resolution=RESOLUTION)
+        return road_graph, chart, chart
 
     # ---------------------------------------------------------------------------- #
     #                                Reset Functions                               #
@@ -530,10 +846,17 @@ with gr.Blocks() as demo:
             town_name_sampler,
             towns_state,
             roads_state,
+            current_map_image,
             output_image])
     def reset_town(shape, height_map):
-        chart = plot_map(shape, height_map, None, None, return_step='height_map')
-        return TownNameSampler(), list(), RoadGraph.empty(), chart
+        if height_map is not None:
+            return_step = 'height_map'
+        elif shape is not None: 
+            return_step = 'shape'
+        else:
+            return_step = 'empty'
+        chart = plot_map(shape, height_map, None, None, return_step=return_step, resolution=RESOLUTION)
+        return TownNameSampler(), list(), RoadGraph.empty(), chart, chart
 
     # ----------------------------------- Roads ---------------------------------- #
     @reset_roads_button.click(
@@ -543,10 +866,19 @@ with gr.Blocks() as demo:
             towns_state],
         outputs=[
             roads_state,
+            current_map_image,
             output_image])
     def reset_roads(shape, height_map, towns):
-        chart = plot_map(shape, height_map, towns, None, return_step='towns')
-        return RoadGraph.empty(), chart
+        if len(towns) > 0:
+            return_step = 'towns'
+        elif height_map is not None:
+            return_step = 'height_map'
+        elif shape is not None:
+            return_step = 'shape'
+        else:
+            return_step = 'empty'
+        chart = plot_map(shape, height_map, towns, None, return_step=return_step, resolution=RESOLUTION)
+        return RoadGraph.empty(), chart, chart
 
 
 if __name__ == '__main__':

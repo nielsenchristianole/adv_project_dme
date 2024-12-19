@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "dnd_map_sampler"
 version = "0.0.1"
 authors = [
-  { name="Danina Le", email="sxxxxxx@dtu.dk" },
+  { name="Danina Li", email="s214629@dtu.dk" },
   { name="Christian Ole Nielsen", email="s204131@dtu.dk"},
   { name="Calle Ryge", email="s204114@dtu.dk"}
 ]

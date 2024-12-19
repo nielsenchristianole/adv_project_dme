@@ -41,10 +41,19 @@ def heightmap_to_3d_mesh(heightmap, output_path="terrain_mesh.obj", max_GB_mem=0
     mesh.export(output_path)
     return output_path
 
+def uniform_to_height(u: np.ndarray, *, mean: float = 300.0) -> np.ndarray:
+    """
+    Transform uniform samples to height samples
+    u ~ U(0, 1)
+    height ~ Exp(mean)
+    """
+    return - mean * np.log(1 - u)
+
 # Example usage:
 if __name__ == "__main__":
     # Example heightmap (replace with your actual 2D heightmap)
     from pathlib import Path
-    hm_path = Path('assets/defaults/height_map.npy')
+    hm_path = Path('assets/defaults/example_data/heights/height_0.npy')
     heightmap = np.load(hm_path)
+    heightmap = uniform_to_height(heightmap)
     heightmap_to_3d_mesh(heightmap, output_path="terrain_mesh.obj")

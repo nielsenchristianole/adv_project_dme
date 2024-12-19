@@ -122,20 +122,48 @@ def plot_map(
             int(resolution * shape.shape[0] / max(shape.shape[:2])),
             int(resolution * shape.shape[1] / max(shape.shape[:2])))
         scaled_shape = cv2.resize(shape, out_resolution[::-1], interpolation=cv2.INTER_LINEAR)
-        shape_sea_mask = scaled_shape == 0
+        # Create an empty RGB image
+        map_so_far = np.full((*scaled_shape.shape, 3), WATER_COLOR, dtype=np.uint8)
+
+        # Use marching squares to find contours on unscaled shape
+        shape_outline = measure.find_contours(shape, level=0.5)
         
-        map_so_far = np.empty((*scaled_shape.shape, 3), dtype=np.uint8)
-        map_so_far[shape_sea_mask] = WATER_COLOR
-        map_so_far[~shape_sea_mask] = TERRAIN_COLORMAP[0]
-        
-        shape_outline = measure.find_contours(scaled_shape, level=0.5)
+        scale_x = out_resolution[1] / shape.shape[1]
+        scale_y = out_resolution[0] / shape.shape[0]
         polygons = []
         for contour in shape_outline:
-            contour_points = [(point[0], point[1]) for point in contour]
+            contour_points = [(point[1]*scale_x, point[0]*scale_y) for point in contour]
             polygon = shapely.Polygon(contour_points)
             if polygon.is_valid:
                 polygons.append(polygon)
+
+        # Create MultiPolygon from valid polygons
         poly_shape = shapely.MultiPolygon(polygons)
+
+        # Identify the largest polygon as the main exterior
+        exterior_polygon = max(polygons, key=lambda p: p.area)
+
+        # Classify polygons as exteriors or interiors
+        exteriors = [p for p in polygons if p.equals(exterior_polygon) or not exterior_polygon.contains(p)]
+        interiors = [p for p in polygons if exterior_polygon.contains(p) and not p.equals(exterior_polygon)]
+        
+        terrain_mask = np.zeros_like(map_so_far[:, :, 0], dtype=np.uint8)  # Assuming map_so_far is an RGB image
+
+        # Fill the terrain mask for exteriors
+        for polygon in exteriors:
+            exterior_coords = np.array(polygon.exterior.coords, dtype=np.int32)
+            cv2.fillPoly(terrain_mask, [exterior_coords], 1)  # Fill mask with 1 for terrain
+
+        # Subtract water areas (interiors) from the terrain mask
+        for polygon in interiors:
+            interior_coords = np.array(polygon.exterior.coords, dtype=np.int32)
+            cv2.fillPoly(terrain_mask, [interior_coords], 0)  # Set mask to 0 for water
+
+        map_so_far[:] = np.where(
+            terrain_mask[:, :, None] == 1,  # Expand mask dimensions for broadcasting
+            TERRAIN_COLORMAP[0],                 # Terrain color where mask is 1
+            WATER_COLOR                    # Water color where mask is 0
+        )
         
     # -------------------------------- Height map -------------------------------- #
     if return_step >= RETURN_STEP_OPTIONS.height_map:
@@ -152,32 +180,23 @@ def plot_map(
         simple_height_map_non_clipped = cv2.resize(simple_height_map_non_clipped, out_resolution[::-1], interpolation=cv2.INTER_LINEAR)
         simple_height_map = np.clip(simple_height_map_non_clipped, a_min=0, a_max=None)
 
-        # where to draw sea
-        height_sea_mask = simple_height_map <= 0
-
         # color the map
         map_color = np.empty((*out_resolution, 3), dtype=np.uint8)
         for i in range(3):
             colormapped = cv2.applyColorMap((simple_height_map * (255 / max_height)).astype(np.uint8), TERRAIN_COLORMAP[:, i])
             map_color[..., i] = colormapped
-
-        map_color[height_sea_mask] = WATER_COLOR
-        # Where the heightmap is negative but the shape is land, make it terrain color
-        shape_mask = np.round(scaled_shape).astype(np.uint8)        
-        map_color[np.where(shape_mask & height_sea_mask)] = TERRAIN_COLORMAP[0]
-
-        # draw contours on the map
+            
+        map_color = np.where(terrain_mask[..., None] == 0, WATER_COLOR, map_color)
         map_so_far = map_color.copy()
-        # contour_levels = np.linspace(0, simple_height_map.max(), num_contours+2)[1:-1]
-        contour_levels = np.quantile(simple_height_map[~height_sea_mask], np.linspace(0, 1, num_contour_levels+2)[1:-1])
+        simple_height_map: np.ma.MaskedArray = np.ma.masked_where(terrain_mask == 0, simple_height_map)
+        contour_levels = np.quantile(simple_height_map.compressed(), np.linspace(0, 1, num_contour_levels+2)[1:-1])
         contours = list()
         for level in contour_levels:
-            _conts = measure.find_contours(simple_height_map, level=level)
+            _conts = measure.find_contours(simple_height_map.filled(0), level=level)
             _conts = [c[:,None,::-1].astype(np.int32) for c in _conts if c.shape[0] > min_contour_length] # filter contours and correct format
             _conts = [np.concatenate((c,c[::-1]), axis=0) if np.linalg.norm(c[0] - c[-1]) > contour_is_probably_not_closed_threshold else c for c in _conts] # reverse contours which arent closed
             contours.extend(_conts)
         map_so_far = cv2.drawContours(map_so_far , contours, -1, contour_color, contour_pixel_width)
-
 
     # ------------------------ Contours and polyline shape ----------------------- #
     if isinstance(poly_shape, shapely.MultiPolygon):
@@ -186,7 +205,7 @@ def plot_map(
             poly_shape_line.append(list(pol.exterior.coords))
             for interior in pol.interiors:
                 poly_shape_line.append(list(interior.coords))
-        poly_shape_line = [np.array(s, dtype=np.int32)[:,None,::-1] for s in poly_shape_line]
+        poly_shape_line = [np.array(s, dtype=np.int32)[:,None,:] for s in poly_shape_line]
     elif (poly_shape is None) and (return_step >= RETURN_STEP_OPTIONS.height_map):
         poly_shape_line = measure.find_contours(simple_height_map_non_clipped, level=0)
         poly_shape_line = [s[:,None,::-1].astype(np.int32) for s in poly_shape_line if s.shape[0] > 3]

@@ -16,11 +16,10 @@ import numpy as np
 
 from typing import List
 
+import torch
+
 class TownGenerator:
-    def __init__(self,
-                 config_path : str,
-                 model_config_path : str,
-                 checkpoint_path : str):
+    def __init__(self, config_path: str, model_config_path: str, checkpoint_path: str):
         
         with open(config_path, 'r') as f:
             config_args = yaml.safe_load(f)
@@ -35,6 +34,7 @@ class TownGenerator:
         model_params = dict_to_namespace(model_config_args)
         
         self.model = get_inference_model(checkpoint_path, params, model_params)
+
 
         kernel = RBF(5, (1e-10, 1e6)) * C(1.0, (1e-10, 1e6))
         self.gp = GaussianProcessRegressor(kernel=kernel, 

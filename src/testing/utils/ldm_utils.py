@@ -50,7 +50,7 @@ def load_models(model_configs: dict, *, device: str='cuda', model_root: Path=MOD
 
     shape_model: LatentDiffusion = load_model('shape_ldm')
     shape_model.first_stage_model.negative_1_to_1 = False
-    shape_model.first_stage_model.im_recon_mode = 'binary'
+    shape_model.first_stage_model.im_recon_mode = 'continuous_binary'
 
     height_model: LatentDiffusion = load_model('height_ldm')
     height_model.first_stage_model.negative_1_to_1 = False
